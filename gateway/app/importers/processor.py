@@ -1,26 +1,31 @@
-import hashlib, logging, zipfile
+import hashlib
+import logging
+import zipfile
 from pathlib import Path
+
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
+
 from ..archive.service import ArchiveService
 from ..errors import safe_log_exception
-from .cleanup import cleanup_terminal_attempt
-from .staging import enqueue_staging_candidate
-from .zip_staging import safe_extract, ZipLimits, UnsupportedZipError
+from ..models import ArchiveObject, ImportBatchCommit, ImportJob, SourceAccount
 from .attachments import prepare_attachment_work
-from .service import BatchReplayIdentityError, ImportService
+from .cleanup import cleanup_terminal_attempt
 from .generic import ParserRegistry, ParserValidationError, load_json_document
 from .retry_policy import (
     ARCHIVE_INTEGRITY_FAILURE,
     resolve_durable_parser_contract,
 )
+from .service import BatchReplayIdentityError, ImportService
+from .staging import enqueue_staging_candidate
 from .worker import ImportWorker, LeaseLost
-from ..models import ArchiveObject, ImportBatchCommit, ImportJob, SourceAccount
+from .zip_staging import UnsupportedZipError, ZipLimits, safe_extract
 
 logger = logging.getLogger(__name__)
+_DEFAULT_ZIP_LIMITS = ZipLimits()
 
 class ImportProcessor:
-    def __init__(self, db, archive_root: Path, limits: ZipLimits = ZipLimits(), registry=None):
+    def __init__(self, db, archive_root: Path, limits: ZipLimits = _DEFAULT_ZIP_LIMITS, registry=None):
         self.db, self.root, self.limits = db, archive_root, limits
         self.registry = registry or ParserRegistry()
     def process(self, job, token, health_check=None) -> dict:
@@ -181,7 +186,7 @@ class ImportProcessor:
             keep=True
             self.db.rollback()
             raise
-        except Exception as exc:
+        except Exception:
             keep=True
             self.db.rollback()
             worker.mark_failed_or_partial(job_id, token, 'processor_error', {'errors':[{'type':'processor_error','detail':'processing failed','severity':'error'}]}, 'processor_error')
@@ -201,7 +206,7 @@ class ImportProcessor:
                             "terminal attempt staging cleanup incomplete",
                             extra={"cleanup_outcome": cleanup.outcome},
                         )
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     safe_log_exception(
                         logger,
                         logging.ERROR,

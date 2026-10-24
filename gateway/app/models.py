@@ -1,10 +1,24 @@
 import uuid
-from datetime import datetime, timezone
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String, Text, UniqueConstraint, text
+from datetime import UTC, datetime
+
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+
 from .db import Base
 from .importers.status import PENDING
+
 
 class ArchiveObject(Base):
     __tablename__ = "archive_objects"
@@ -19,7 +33,7 @@ class ArchiveObject(Base):
     integrity_status: Mapped[str] = mapped_column(String(32), nullable=False, default="verified")
     integrity_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     integrity_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    first_archived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    first_archived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
 class ArchiveObservation(Base):
@@ -31,7 +45,7 @@ class ArchiveObservation(Base):
     source_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     logical_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     import_job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("import_jobs.id", ondelete="SET NULL"), nullable=True, index=True)
-    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
 class SourceAccount(Base):
@@ -42,8 +56,8 @@ class SourceAccount(Base):
     account_label: Mapped[str] = mapped_column(String(255), nullable=False)
     external_account_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
 class ImportJob(Base):
     __tablename__ = "import_jobs"
@@ -82,8 +96,8 @@ class ImportJob(Base):
     checkpoint_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     report_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
 class ImportBatchCommit(Base):
     __tablename__ = "import_batch_commits"
@@ -112,8 +126,8 @@ class Conversation(Base):
     external_conversation_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
 class Message(Base):
     __tablename__ = "messages"
@@ -124,8 +138,8 @@ class Message(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("conversations.id"), nullable=False)
     external_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
 class MessageRevision(Base):
     __tablename__ = "message_revisions"
@@ -157,7 +171,7 @@ class MessageRevision(Base):
     revision_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     archive_object_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("archive_objects.id"), nullable=True)
     raw_json_pointer: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 class MessageObservation(Base):
     __tablename__ = "message_observations"
@@ -179,7 +193,7 @@ class MessageObservation(Base):
     source_observation_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     canonical_fragment_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     fragment_fingerprint_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 class Attachment(Base):
     __tablename__ = "attachments"
@@ -201,7 +215,7 @@ class Attachment(Base):
     media_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     descriptor_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 
 class AttachmentObservation(Base):
@@ -247,7 +261,7 @@ class AttachmentObservation(Base):
     canonical_fragment_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     fragment_fingerprint_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     observed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
 
 
@@ -261,7 +275,7 @@ class ConversationNode(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
     external_node_id: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
 
 
 class ConversationObservation(Base):
@@ -309,7 +323,7 @@ class ConversationObservation(Base):
     source_observation_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     canonical_fragment_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     fragment_fingerprint_version: Mapped[str] = mapped_column(String(32), nullable=False)
-    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
 
 
 class MappingNodeObservation(Base):
@@ -375,4 +389,4 @@ class MappingNodeObservation(Base):
     source_observation_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     canonical_fragment_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     fragment_fingerprint_version: Mapped[str] = mapped_column(String(32), nullable=False)
-    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))

@@ -37,7 +37,6 @@ from fastapi.responses import JSONResponse
 from .client_ip import client_ip
 from .config import get_settings
 
-
 MULTIPART_OVERHEAD_BYTES = 1024 * 1024
 UPLOAD_PATHS = frozenset({
     "/api/v1/import/chatgpt",

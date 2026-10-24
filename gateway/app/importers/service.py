@@ -1,17 +1,49 @@
 import copy
 from dataclasses import dataclass, replace
 from typing import Any
-from sqlalchemy import func, or_, select
+
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
-from ..archive.service import ArchiveIntegrityError, ArchiveService, PendingArchiveResult
-from ..models import ArchiveObject, ArchiveObservation, Attachment, AttachmentObservation, Conversation, ConversationNode, ConversationObservation, ImportBatchCommit, ImportJob, MappingNodeObservation, Message, MessageObservation, MessageRevision, SourceAccount
+
+from ..archive.service import (
+    ArchiveIntegrityError,
+    ArchiveService,
+    PendingArchiveResult,
+)
+from ..models import (
+    ArchiveObject,
+    ArchiveObservation,
+    Attachment,
+    AttachmentObservation,
+    Conversation,
+    ConversationNode,
+    ConversationObservation,
+    ImportBatchCommit,
+    ImportJob,
+    MappingNodeObservation,
+    Message,
+    MessageObservation,
+    MessageRevision,
+    SourceAccount,
+)
 from .attachments import AttachmentWork
 from .generic import GenericTreeParser
+from .real_chatgpt import (
+    FRAGMENT_FINGERPRINT_VERSION,
+    OBSERVATION_FINGERPRINT_VERSION,
+    SEMANTIC_FINGERPRINT_VERSION,
+    normalize_timestamp,
+)
 from .report import empty_report
+from .revision import (
+    compute_canonical_fragment_fingerprint,
+    compute_revision_fingerprint,
+    compute_semantic_revision_fingerprint,
+    compute_source_observation_fingerprint,
+    compute_text_hash,
+)
 from .tree import TreeValidator
 from .worker import ImportWorker, LeaseLost, LeaseRequired
-from .revision import compute_canonical_fragment_fingerprint, compute_revision_fingerprint, compute_semantic_revision_fingerprint, compute_source_observation_fingerprint, compute_text_hash
-from .real_chatgpt import FRAGMENT_FINGERPRINT_VERSION, OBSERVATION_FINGERPRINT_VERSION, SEMANTIC_FINGERPRINT_VERSION, normalize_timestamp
 
 
 @dataclass(frozen=True)
@@ -542,7 +574,7 @@ class ImportService:
                 item.branch_key,
                 item.node_id == parsed.current_node_id,
                 order,
-                pointer[:-len("/message")] if pointer.endswith("/message") else pointer,
+                pointer.removesuffix("/message"),
                 pointer,
                 {"archive_object_id": str(archive_object_id), "zip_member": source_member},
                 item.observation_evidence_json,

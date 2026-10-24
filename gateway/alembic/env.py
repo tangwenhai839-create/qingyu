@@ -1,11 +1,9 @@
 from logging.config import fileConfig
 
 from alembic import context, util
+from app.database_config import DatabaseConfigurationError, apply_alembic_database_url
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.exc import SQLAlchemyError
-
-from app.database_config import DatabaseConfigurationError, apply_alembic_database_url
-
 
 config = context.config
 try:
@@ -13,8 +11,9 @@ try:
 except DatabaseConfigurationError as exc:
     raise util.CommandError(str(exc)) from None
 
+import app.models  # noqa: F401  # register model tables on Base.metadata
 from app.db import Base
-import app.models
+
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 target_metadata = Base.metadata

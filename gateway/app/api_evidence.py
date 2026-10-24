@@ -1,6 +1,6 @@
-from datetime import datetime
 import logging
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
@@ -11,7 +11,6 @@ from .db import get_db
 from .evidence.cursor import InvalidCursor, decode_cursor, encode_cursor
 from .evidence.query import EvidenceIntegrityError, EvidenceQueryService
 from .evidence.schemas import AttachmentObservationPage, NodePage, ObservationPage
-
 
 router = APIRouter(
     prefix="/api/v1/evidence",

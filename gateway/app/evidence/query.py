@@ -1,6 +1,6 @@
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
-import uuid
 
 from sqlalchemy import and_, or_, select
 
@@ -373,7 +373,7 @@ class EvidenceQueryService:
         ).first()
         if context is None:
             return None
-        attachment, observation, batch, job = context
+        attachment, _observation, _batch, job = context
         base_filters = [
             AttachmentObservation.attachment_id == attachment_id,
             AttachmentObservation.import_job_id == job.id,

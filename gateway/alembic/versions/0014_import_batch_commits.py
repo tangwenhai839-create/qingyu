@@ -3,8 +3,8 @@
 Revision ID: 0014_import_batch_commits
 Revises: 0013_import_job_defaults
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0014_import_batch_commits"

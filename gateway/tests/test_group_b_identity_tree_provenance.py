@@ -1,14 +1,22 @@
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
-
-from sqlalchemy import delete
-from sqlalchemy.orm import Session
+from datetime import UTC, datetime, timedelta
 
 from app.db import engine
 from app.importers.query import ImportedTreeQuery
 from app.importers.service import ImportService
-from app.models import ArchiveObject, Attachment, Conversation, ImportJob, Message, MessageObservation, MessageRevision, SourceAccount
+from app.models import (
+    ArchiveObject,
+    Attachment,
+    Conversation,
+    ImportJob,
+    Message,
+    MessageObservation,
+    MessageRevision,
+    SourceAccount,
+)
+from sqlalchemy import delete
+from sqlalchemy.orm import Session
 
 
 def _clear(db):
@@ -33,7 +41,7 @@ def test_tree_queries_never_mix_import_snapshots():
 def test_raw_pointer_escapes_node_and_resolves_source_json():
     payload={'schema_marker':'qingyu-fixture-v1','conversations':[{'id':'pointer','mapping':{'a/b~c':{'parent':None,'message':{'author':{'role':'user'},'content':{'parts':['x']}}}}}]}
     with Session(engine) as db:
-        _clear(db); account=SourceAccount(platform='pointer',account_label='stable',metadata_json={}); archive=ArchiveObject(sha256='3'*64,size_bytes=1,relative_path='x',media_type='x',integrity_status='verified',metadata_json={}); db.add_all([account,archive]); db.flush(); job=ImportJob(source_account_id=account.id,archive_object_id=archive.id,parser_name='p',parser_version='1',status='running',lease_token=uuid.uuid4(),lease_expires_at=datetime.now(timezone.utc)+timedelta(minutes=1),report_json={}); db.add(job); db.commit()
+        _clear(db); account=SourceAccount(platform='pointer',account_label='stable',metadata_json={}); archive=ArchiveObject(sha256='3'*64,size_bytes=1,relative_path='x',media_type='x',integrity_status='verified',metadata_json={}); db.add_all([account,archive]); db.flush(); job=ImportJob(source_account_id=account.id,archive_object_id=archive.id,parser_name='p',parser_version='1',status='running',lease_token=uuid.uuid4(),lease_expires_at=datetime.now(UTC)+timedelta(minutes=1),report_json={}); db.add(job); db.commit()
         ImportService(db).import_fixture(payload,archive.id,job=job,lease_token=job.lease_token,source_member='nested/fixture.json')
         observation=db.query(MessageObservation).one(); assert observation.raw_mapping_pointer=='/conversations/0/mapping/a~1b~0c'; assert observation.metadata_json['zip_member']=='nested/fixture.json'; assert payload['conversations'][0]['mapping']['a/b~c']['message']['content']['parts']==['x']
 
@@ -43,7 +51,7 @@ def test_concurrent_jobs_reuse_one_stable_message():
     with Session(engine) as db:
         _clear(db); account=SourceAccount(platform='concurrent',account_label='stable',metadata_json={}); archive=ArchiveObject(sha256='4'*64,size_bytes=1,relative_path='x',media_type='x',integrity_status='verified',metadata_json={}); db.add_all([account,archive]); db.flush(); jobs=[]
         for _ in range(2):
-            job=ImportJob(source_account_id=account.id,archive_object_id=archive.id,parser_name='p',parser_version='1',status='running',lease_token=uuid.uuid4(),lease_expires_at=datetime.now(timezone.utc)+timedelta(minutes=1),report_json={}); db.add(job); jobs.append(job)
+            job=ImportJob(source_account_id=account.id,archive_object_id=archive.id,parser_name='p',parser_version='1',status='running',lease_token=uuid.uuid4(),lease_expires_at=datetime.now(UTC)+timedelta(minutes=1),report_json={}); db.add(job); jobs.append(job)
         db.commit(); specs=[(job.id,job.lease_token,archive.id) for job in jobs]
     def run(spec):
         with Session(engine) as db:

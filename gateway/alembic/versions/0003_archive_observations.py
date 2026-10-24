@@ -3,15 +3,16 @@
 Revision ID: 0003_archive_observations
 Revises: 0002_archive_objects
 """
-from typing import Sequence, Union
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0003_archive_observations"
-down_revision: Union[str, None] = "0002_archive_objects"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "0002_archive_objects"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.alter_column("archive_objects", "original_filename", existing_type=sa.Text(), nullable=True)

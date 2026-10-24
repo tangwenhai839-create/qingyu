@@ -1,16 +1,27 @@
-import io, json, zipfile
+import io
+import json
+import zipfile
 from pathlib import Path
-
-from fastapi.testclient import TestClient
-from sqlalchemy import delete
-from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import engine
 from app.importers.query import ImportedTreeQuery
 from app.importers.worker_runtime import WorkerRuntime
 from app.main import app
-from app.models import ArchiveObject, ArchiveObservation, Attachment, Conversation, ImportJob, Message, MessageObservation, MessageRevision, SourceAccount
+from app.models import (
+    ArchiveObject,
+    ArchiveObservation,
+    Attachment,
+    Conversation,
+    ImportJob,
+    Message,
+    MessageObservation,
+    MessageRevision,
+    SourceAccount,
+)
+from fastapi.testclient import TestClient
+from sqlalchemy import delete
+from sqlalchemy.orm import Session
 
 
 def _clear(db):

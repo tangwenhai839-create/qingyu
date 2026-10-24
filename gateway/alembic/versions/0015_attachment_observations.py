@@ -11,10 +11,9 @@ import uuid
 from collections import defaultdict
 from typing import Any
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision = "0015_attachment_observations"
 down_revision = "0014_import_batch_commits"

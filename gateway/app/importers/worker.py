@@ -1,11 +1,11 @@
-from datetime import datetime, timezone, timedelta
-from dataclasses import dataclass
-from collections import Counter
 import copy
 import uuid
-from sqlalchemy import and_, exists, func, or_, select, update
+from collections import Counter
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..archive.manifest import sync_manifest_from_archive_object
@@ -51,45 +51,44 @@ class ImportWorker:
         return recovered
 
     def recover_observed(self, job_id, token, expiry, attempts, maximum) -> bool:
-        with self._fresh_session() as lifecycle:
-            with lifecycle.begin():
-                owned = lifecycle.scalar(
-                    select(ImportJob)
-                    .where(
-                        ImportJob.id == job_id,
-                        ImportJob.status == RUNNING,
-                        ImportJob.lease_token == token,
-                        ImportJob.lease_expires_at == expiry,
-                        ImportJob.lease_expires_at <= database_wall_clock(),
-                        ImportJob.attempt_count == attempts,
-                        ImportJob.max_attempts == maximum,
-                    )
-                    .with_for_update()
+        with self._fresh_session() as lifecycle, lifecycle.begin():
+            owned = lifecycle.scalar(
+                select(ImportJob)
+                .where(
+                    ImportJob.id == job_id,
+                    ImportJob.status == RUNNING,
+                    ImportJob.lease_token == token,
+                    ImportJob.lease_expires_at == expiry,
+                    ImportJob.lease_expires_at <= database_wall_clock(),
+                    ImportJob.attempt_count == attempts,
+                    ImportJob.max_attempts == maximum,
                 )
-                if owned is None:
-                    return False
-                owned.lease_token = None
-                owned.lease_expires_at = None
-                if owned.attempt_count < owned.max_attempts:
-                    owned.status = PENDING
-                    owned.error_summary = "retry_after_stale: lease_expired"
-                    return True
-
-                snapshot = aggregate_durable_job_state(
-                    lifecycle,
-                    job_id,
-                    owned.attempt_count,
-                    terminal_report=owned.report_json,
-                )
-                terminal = PARTIAL if snapshot.batches else FAILED
-                owned.status = terminal
-                owned.result_code = terminal
-                owned.error_code = "lease_expired"
-                owned.finished_at = database_wall_clock()
-                owned.error_summary = "worker_crash: lease_expired"
-                owned.report_json = snapshot.report
-                apply_durable_counts(owned, snapshot)
+                .with_for_update()
+            )
+            if owned is None:
+                return False
+            owned.lease_token = None
+            owned.lease_expires_at = None
+            if owned.attempt_count < owned.max_attempts:
+                owned.status = PENDING
+                owned.error_summary = "retry_after_stale: lease_expired"
                 return True
+
+            snapshot = aggregate_durable_job_state(
+                lifecycle,
+                job_id,
+                owned.attempt_count,
+                terminal_report=owned.report_json,
+            )
+            terminal = PARTIAL if snapshot.batches else FAILED
+            owned.status = terminal
+            owned.result_code = terminal
+            owned.error_code = "lease_expired"
+            owned.finished_at = database_wall_clock()
+            owned.error_summary = "worker_crash: lease_expired"
+            owned.report_json = snapshot.report
+            apply_durable_counts(owned, snapshot)
+            return True
     def claim_next(self, lease_duration: int = 300) -> ClaimedJob | None:
         job = self.db.scalar(
             select(ImportJob)
@@ -102,7 +101,7 @@ class ImportWorker:
             .with_for_update(skip_locked=True)
         )
         if job is None: return None
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         token = uuid.uuid4()
         job.status = RUNNING; job.started_at = job.started_at or now; job.first_started_at = job.first_started_at or now; job.last_attempt_started_at = now; job.attempt_count += 1; job.last_heartbeat_at = now; job.lease_expires_at = now + timedelta(seconds=lease_duration); job.lease_token = token
         self.db.flush()
@@ -183,78 +182,75 @@ class ImportWorker:
         return self.advance_checkpoint(job, token, sequence, checkpoint.get("last_batch_key", ""))
     def mark_completed(self, job, token, report: dict | None = None, result_code: str = "imported", counts: dict | None = None) -> bool:
         job_id = getattr(job, "id", job)
-        with self._fresh_session() as lifecycle:
-            with lifecycle.begin():
-                owned = lifecycle.scalar(select(ImportJob).where(ownership_predicate(job_id, token)).with_for_update())
-                if owned is None:
-                    return False
-                snapshot = aggregate_durable_job_state(
-                    lifecycle, job_id, owned.attempt_count, terminal_report=report
-                )
-                owned.status = COMPLETED
-                owned.finished_at = database_wall_clock()
-                owned.report_json = snapshot.report
-                owned.result_code = result_code
-                owned.lease_token = None
-                owned.lease_expires_at = None
-                if snapshot.batches:
-                    apply_durable_counts(owned, snapshot)
-                else:
-                    for key, value in (counts or {}).items():
-                        if key in snapshot.counts and value != snapshot.counts[key]:
-                            raise DurableLedgerInconsistent("inconsistent_terminal_counts")
-                    apply_durable_counts(owned, snapshot)
+        with self._fresh_session() as lifecycle, lifecycle.begin():
+            owned = lifecycle.scalar(select(ImportJob).where(ownership_predicate(job_id, token)).with_for_update())
+            if owned is None:
+                return False
+            snapshot = aggregate_durable_job_state(
+                lifecycle, job_id, owned.attempt_count, terminal_report=report
+            )
+            owned.status = COMPLETED
+            owned.finished_at = database_wall_clock()
+            owned.report_json = snapshot.report
+            owned.result_code = result_code
+            owned.lease_token = None
+            owned.lease_expires_at = None
+            if snapshot.batches:
+                apply_durable_counts(owned, snapshot)
+            else:
+                for key, value in (counts or {}).items():
+                    if key in snapshot.counts and value != snapshot.counts[key]:
+                        raise DurableLedgerInconsistent("inconsistent_terminal_counts")
+                apply_durable_counts(owned, snapshot)
         return True
     def mark_failed(self, job, token, error: str, report: dict | None = None, result_code: str | None = None) -> bool:
         job_id = getattr(job, "id", job)
-        with self._fresh_session() as lifecycle:
-            with lifecycle.begin():
-                owned = lifecycle.scalar(
-                    select(ImportJob).where(ownership_predicate(job_id, token)).with_for_update()
-                )
-                if owned is None:
-                    return False
-                snapshot = aggregate_durable_job_state(
-                    lifecycle,
-                    job_id,
-                    owned.attempt_count,
-                    terminal_report=report,
-                )
-                terminal = PARTIAL if snapshot.batches else FAILED
-                owned.status = terminal
-                owned.finished_at = database_wall_clock()
-                owned.error_summary = error
-                owned.report_json = snapshot.report
-                owned.error_code = error
-                owned.result_code = result_code or terminal
-                owned.lease_token = None
-                owned.lease_expires_at = None
-                apply_durable_counts(owned, snapshot)
+        with self._fresh_session() as lifecycle, lifecycle.begin():
+            owned = lifecycle.scalar(
+                select(ImportJob).where(ownership_predicate(job_id, token)).with_for_update()
+            )
+            if owned is None:
+                return False
+            snapshot = aggregate_durable_job_state(
+                lifecycle,
+                job_id,
+                owned.attempt_count,
+                terminal_report=report,
+            )
+            terminal = PARTIAL if snapshot.batches else FAILED
+            owned.status = terminal
+            owned.finished_at = database_wall_clock()
+            owned.error_summary = error
+            owned.report_json = snapshot.report
+            owned.error_code = error
+            owned.result_code = result_code or terminal
+            owned.lease_token = None
+            owned.lease_expires_at = None
+            apply_durable_counts(owned, snapshot)
         return True
 
     def mark_failed_or_partial(self, job, token, error: str, report: dict | None = None, result_code: str | None = None) -> str:
         job_id = getattr(job, "id", job)
-        with self._fresh_session() as lifecycle:
-            with lifecycle.begin():
-                owned = lifecycle.scalar(select(ImportJob).where(ownership_predicate(job_id, token)).with_for_update())
-                if owned is None:
-                    raise LeaseLost("ownership_lost")
-                snapshot = aggregate_durable_job_state(
-                    lifecycle,
-                    job_id,
-                    owned.attempt_count,
-                    terminal_report=report,
-                )
-                terminal = PARTIAL if snapshot.batches else FAILED
-                owned.status = terminal
-                owned.finished_at = database_wall_clock()
-                owned.error_summary = error
-                owned.report_json = snapshot.report
-                owned.error_code = error
-                owned.result_code = result_code or terminal
-                owned.lease_token = None
-                owned.lease_expires_at = None
-                apply_durable_counts(owned, snapshot)
+        with self._fresh_session() as lifecycle, lifecycle.begin():
+            owned = lifecycle.scalar(select(ImportJob).where(ownership_predicate(job_id, token)).with_for_update())
+            if owned is None:
+                raise LeaseLost("ownership_lost")
+            snapshot = aggregate_durable_job_state(
+                lifecycle,
+                job_id,
+                owned.attempt_count,
+                terminal_report=report,
+            )
+            terminal = PARTIAL if snapshot.batches else FAILED
+            owned.status = terminal
+            owned.finished_at = database_wall_clock()
+            owned.error_summary = error
+            owned.report_json = snapshot.report
+            owned.error_code = error
+            owned.result_code = result_code or terminal
+            owned.lease_token = None
+            owned.lease_expires_at = None
+            apply_durable_counts(owned, snapshot)
         return terminal
 
     def retry(
@@ -325,14 +321,14 @@ class ImportWorker:
                     ),
                 )
             )
-        values = dict(
-            status=PENDING,
-            result_code=None,
-            error_code=None,
-            error_summary=None,
-            finished_at=None,
-            lease_expires_at=None,
-        )
+        values = {
+            "status": PENDING,
+            "result_code": None,
+            "error_code": None,
+            "error_summary": None,
+            "finished_at": None,
+            "lease_expires_at": None,
+        }
         if expected_parser_name is not None:
             # Ledger-free failed jobs adopt the parser selected by preflight;
             # durable jobs simply re-assert their already-pinned identity.

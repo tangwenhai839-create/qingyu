@@ -2,19 +2,27 @@ import json
 import time
 import uuid
 import zipfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-import pytest
-from sqlalchemy import select, update
-from sqlalchemy.orm import Session
-
-from app.db import engine
-from app.archive.service import ArchiveService
 import app.importers.processor as processor_module
+import pytest
+from app.archive.service import ArchiveService
+from app.db import engine
 from app.importers.processor import ArchiveConsumptionIntegrityError, ImportProcessor
 from app.importers.service import ImportService
 from app.importers.worker import ImportWorker, LeaseLost, LeaseRequired
-from app.models import ArchiveObject, Attachment, Conversation, ImportJob, Message, MessageObservation, MessageRevision, SourceAccount
+from app.models import (
+    ArchiveObject,
+    Attachment,
+    Conversation,
+    ImportJob,
+    Message,
+    MessageObservation,
+    MessageRevision,
+    SourceAccount,
+)
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session
 
 
 def _job(db):
@@ -105,7 +113,7 @@ def test_expired_worker_has_zero_integrity_side_effects_then_new_owner_records_f
             parser_version="0.1",
             status="running",
             lease_token=token_a,
-            lease_expires_at=datetime.now(timezone.utc) + timedelta(seconds=1),
+            lease_expires_at=datetime.now(UTC) + timedelta(seconds=1),
             report_json={"owner": "before"},
             items_discovered=7,
             items_imported=5,
@@ -149,7 +157,7 @@ def test_expired_worker_has_zero_integrity_side_effects_then_new_owner_records_f
         verify_a.execute(
             update(ImportJob)
             .where(ImportJob.id == job_id)
-            .values(lease_token=token_b, lease_expires_at=datetime.now(timezone.utc) + timedelta(seconds=60))
+            .values(lease_token=token_b, lease_expires_at=datetime.now(UTC) + timedelta(seconds=60))
         )
         verify_a.commit()
 

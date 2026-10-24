@@ -8,7 +8,6 @@ import logging
 from .config import normalize_log_format
 from .observability import RequestIdFilter, current_request_id
 
-
 _RESERVED = {
     "args",
     "asctime",

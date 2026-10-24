@@ -7,16 +7,21 @@ import threading
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
-from sqlalchemy.exc import SQLAlchemyError
-
 from app.config import Settings, get_settings, normalize_log_format
 from app.db import get_db
 from app.evidence.query import EvidenceQueryService
 from app.logging_config import JsonFormatter, build_formatter, configure_logging
 from app.main import app
-from app.observability import MetricsRegistry, RequestIdFilter, bind_request_id, reset_request_id, resolve_request_id
+from app.observability import (
+    MetricsRegistry,
+    RequestIdFilter,
+    bind_request_id,
+    reset_request_id,
+    resolve_request_id,
+)
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
 API_HEADERS = {"Authorization": "Bearer qingyu-test-token-only"}
 READ_HEADERS = {"Authorization": "Bearer qingyu-test-evidence-read-token-only"}

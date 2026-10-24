@@ -1,4 +1,8 @@
-import hashlib, os, re, shutil, stat, zipfile
+import hashlib
+import re
+import shutil
+import stat
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -71,7 +75,10 @@ def _prevalidate(archive, limits):
     return normalized,total
 
 
-def safe_extract(zip_path: Path, destination: Path, limits: ZipLimits = ZipLimits()) -> dict:
+_DEFAULT_ZIP_LIMITS = ZipLimits()
+
+
+def safe_extract(zip_path: Path, destination: Path, limits: ZipLimits = _DEFAULT_ZIP_LIMITS) -> dict:
     with zipfile.ZipFile(zip_path) as archive:
         normalized,total=_prevalidate(archive,limits)
         destination.mkdir(parents=True,exist_ok=True); root=destination.resolve()

@@ -4,11 +4,10 @@ import os
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, delete, event, select
-from sqlalchemy.orm import Session
-
 from app.archive.service import ArchiveIntegrityError, ArchiveService
 from app.models import ArchiveObject, ArchiveObservation
+from sqlalchemy import create_engine, delete, event, select
+from sqlalchemy.orm import Session
 
 DB_URL = os.environ["TEST_DATABASE_URL"]
 

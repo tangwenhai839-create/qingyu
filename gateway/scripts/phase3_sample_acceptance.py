@@ -9,18 +9,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import uuid
 import zipfile
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import func, select, text
-from sqlalchemy.orm import Session
-
-from app.archive.service import ArchiveService
 from app.archive.manifest import render_manifest
+from app.archive.service import ArchiveService
 from app.db import engine
 from app.importers.processor import ImportProcessor
 from app.importers.query import EvidenceTreeQuery
@@ -41,10 +37,11 @@ from app.models import (
     ImportJob,
     MappingNodeObservation,
     Message,
-    MessageObservation,
     MessageRevision,
     SourceAccount,
 )
+from sqlalchemy import func, select, text
+from sqlalchemy.orm import Session
 
 SAMPLE_SHA256 = "04c54e6f87bd2113c5183ba7a2f24b2694c333e5eab6f42308f654063ee4b040"
 EXPECTED = {
@@ -109,7 +106,7 @@ def import_sample(sample: Path, root: Path) -> dict:
             status="running",
             attempt_count=1,
             lease_token=token,
-            lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            lease_expires_at=datetime.now(UTC) + timedelta(minutes=10),
             report_json={},
         )
         session.add(job)

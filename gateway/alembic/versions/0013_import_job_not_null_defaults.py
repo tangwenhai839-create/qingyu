@@ -3,8 +3,8 @@
 Revision ID: 0013_import_job_defaults
 Revises: 0012_import_identity_constraints
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0013_import_job_defaults"
 down_revision = "0012_import_identity_constraints"

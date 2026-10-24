@@ -12,15 +12,22 @@ import uuid
 import zipfile
 
 import pytest
-from sqlalchemy import delete, event, text
-from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
-
 from app.db import engine
 from app.importers.worker import ClaimedJob, ImportWorker
 from app.importers.worker_runtime import WorkerRuntime
-from app.models import ArchiveObject, Attachment, Conversation, ImportJob, Message, MessageObservation, MessageRevision, SourceAccount
-
+from app.models import (
+    ArchiveObject,
+    Attachment,
+    Conversation,
+    ImportJob,
+    Message,
+    MessageObservation,
+    MessageRevision,
+    SourceAccount,
+)
+from sqlalchemy import delete, event, text
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 
 MARKER = 'SUPER_SECRET_CHAT_CONTENT_123'
 TOKEN_MARKER = 'SUPER_SECRET_TOKEN_456'
@@ -173,7 +180,7 @@ main()
         'APP_ENV':'test','API_TOKEN':TOKEN_MARKER,'ARCHIVE_ROOT':str(root),
         'IMPORT_WORKER_POLL_SECONDS':'0.01','IMPORT_WORKER_HEARTBEAT_SECONDS':'0.02','IMPORT_WORKER_LEASE_SECONDS':'5',
     })
-    completed=subprocess.run([sys.executable,'-c',script],cwd=os.getcwd(),env=env,capture_output=True,text=True,timeout=5)
+    completed=subprocess.run([sys.executable,'-c',script],cwd=os.getcwd(),env=env,capture_output=True,text=True,timeout=5,check=False)
     output=completed.stdout+completed.stderr
     assert completed.returncode==0
     assert MARKER not in output and TOKEN_MARKER not in output

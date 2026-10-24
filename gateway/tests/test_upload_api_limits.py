@@ -2,10 +2,6 @@ import io
 from pathlib import Path
 
 import pytest
-from fastapi import HTTPException, UploadFile
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
-
 from app.api_import import _write_upload_with_limit
 from app.archive.service import _sha256_file as archive_sha256_file
 from app.config import Settings, get_settings
@@ -13,7 +9,9 @@ from app.db import get_db
 from app.importers.zip_staging import _sha256_file as zip_sha256_file
 from app.main import app
 from app.request_limits import MULTIPART_OVERHEAD_BYTES
-
+from fastapi import HTTPException, UploadFile
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 HEADERS = {"Authorization": "Bearer qingyu-test-token-only"}
 
@@ -136,8 +134,9 @@ def test_chunked_request_body_is_limited_without_content_length(monkeypatch, pat
     async def send(message):
         sent.append(message)
 
-    from app.request_limits import ImportRequestSizeLimitMiddleware
     import asyncio
+
+    from app.request_limits import ImportRequestSizeLimitMiddleware
 
     asyncio.run(ImportRequestSizeLimitMiddleware(downstream)(
         {"type": "http", "method": "POST", "path": path, "headers": []},

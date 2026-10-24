@@ -1,14 +1,12 @@
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
-import uuid
-
-from fastapi.testclient import TestClient
 
 from app.archive.service import ArchiveService
 from app.config import get_settings
 from app.db import get_db
 from app.main import app
-
+from fastapi.testclient import TestClient
 
 HEADERS = {"Authorization": "Bearer qingyu-test-token-only"}
 

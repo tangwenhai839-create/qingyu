@@ -15,11 +15,9 @@ from pathlib import Path
 
 import pytest
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
-
 from scripts.maintenance import (
     DUMP_NAME,
+    DatabaseTarget,
     MaintenanceError,
     backup_member,
     can_move_forward,
@@ -31,7 +29,8 @@ from scripts.maintenance import (
     scrub,
     sha256_bytes,
 )
-from scripts.maintenance import DatabaseTarget
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 
 GATEWAY = Path(__file__).resolve().parents[1]
 MARKER = "STAGING-DECOY-MUST-NOT-BE-BACKED-UP"
@@ -201,7 +200,7 @@ def test_backup_restore_and_upgrade_round_trip(tmp_path: Path):
         assert _column(source_url, digest, "integrity_checked_at") is None
         assert (archive / relative).read_bytes() == original_bytes
 
-        code, out, err, leaked = _run(["upgrade", "--expect-database", source_name], url=source_url)
+        code, _out, err, leaked = _run(["upgrade", "--expect-database", source_name], url=source_url)
         assert code == 0, err
         assert leaked is False
         assert f"already at {_head()}" in err

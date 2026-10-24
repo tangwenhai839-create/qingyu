@@ -7,7 +7,7 @@ import shutil
 import stat
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -273,7 +273,7 @@ class ArchiveService:
         if len(records) > 1:
             raise ArchiveIntegrityError("archive_integrity_failure: ambiguous digest record", sha256=prepared.sha256)
         record = records[0] if records else None
-        checked_at = datetime.now(timezone.utc)
+        checked_at = datetime.now(UTC)
         if record:
             if record.size_bytes != prepared.size_bytes or record.relative_path != prepared.relative_path:
                 raise ArchiveIntegrityError("archive_integrity_failure: object record mismatch", sha256=prepared.sha256)
@@ -399,7 +399,7 @@ class ArchiveService:
                     record = records[0]
                     record.integrity_status = "integrity_failure"
                     record.integrity_error = f"digest_mismatch:{error.actual_sha256}"
-                    record.integrity_checked_at = datetime.now(timezone.utc)
+                    record.integrity_checked_at = datetime.now(UTC)
                     record_id = record.id
                     marker.commit()
                     committed = marker.scalar(

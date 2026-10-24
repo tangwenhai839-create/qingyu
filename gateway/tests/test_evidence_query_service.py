@@ -1,10 +1,9 @@
-from datetime import datetime, timezone
-from types import SimpleNamespace
 import uuid
-
-from sqlalchemy.dialects import postgresql
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from app.evidence.query import EvidenceQueryService, observed_title
+from sqlalchemy.dialects import postgresql
 
 
 class _Rows:
@@ -60,7 +59,7 @@ def test_observed_title_never_uses_a_latest_conversation_projection():
 
 
 def test_observation_query_preserves_distinct_historical_snapshots():
-    now = datetime(2026, 1, 2, 3, 4, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 2, 3, 4, tzinfo=UTC)
     conversation_id = uuid.uuid4()
     account_id = uuid.uuid4()
 
@@ -110,7 +109,7 @@ def test_observation_query_preserves_distinct_historical_snapshots():
 
 
 def test_node_query_returns_bounded_attachment_metadata_without_internal_locations():
-    now = datetime(2026, 1, 2, 3, 4, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 2, 3, 4, tzinfo=UTC)
     observation_id = uuid.uuid4()
     revision_id = uuid.uuid4()
     message_id = uuid.uuid4()
@@ -212,7 +211,7 @@ def test_node_query_returns_bounded_attachment_metadata_without_internal_locatio
 
 
 def test_attachment_observation_query_returns_attempts_without_locator_values():
-    now = datetime(2026, 1, 2, 3, 4, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 2, 3, 4, tzinfo=UTC)
     observation_id = uuid.uuid4()
     attachment_id = uuid.uuid4()
     attachment = SimpleNamespace(

@@ -7,14 +7,14 @@ evidence, archive bytes, or manifests.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import os
-from pathlib import Path
 import re
 import stat
 import tempfile
 import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import event, select, text
 from sqlalchemy.orm import Session
@@ -28,7 +28,6 @@ from ..evidence.schemas import (
 )
 from ..models import ArchiveObject, Conversation
 from .bundle import BundleInput, ExportBundleError, build_bundle, canonical_json
-
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _PAGE_SIZE = 100
@@ -381,7 +380,7 @@ class ExportService:
                 )
             )
 
-        stamp = generated_at or datetime.now(timezone.utc)
+        stamp = generated_at or datetime.now(UTC)
         if stamp.tzinfo is None:
             raise ExportIntegrityError()
         high_water = _high_water(summaries, upper)

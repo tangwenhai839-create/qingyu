@@ -4,9 +4,9 @@ import copy
 import hashlib
 import json
 import math
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Iterator
+from collections.abc import Iterator
+from datetime import UTC, datetime
+from typing import Any
 
 from .generic import (
     ParsedAttachment,
@@ -16,7 +16,6 @@ from .generic import (
     ParserValidationError,
     pointer_escape,
 )
-
 
 FRAGMENT_FINGERPRINT_VERSION = "canonical-json-v1"
 SEMANTIC_FINGERPRINT_VERSION = "chatgpt-message-v1"
@@ -60,7 +59,7 @@ def normalize_timestamp(value: Any) -> tuple[datetime | None, str]:
     if not math.isfinite(number):
         return None, "invalid"
     try:
-        return datetime.fromtimestamp(number, tz=timezone.utc), "parsed"
+        return datetime.fromtimestamp(number, tz=UTC), "parsed"
     except (OverflowError, OSError, ValueError):
         return None, "out_of_range"
 
