@@ -142,6 +142,8 @@ def test_main_passes_validated_cleanup_configuration(monkeypatch, tmp_path):
 
     settings = SimpleNamespace(
         archive_root=str(tmp_path),
+        log_level="INFO",
+        log_format="text",
         staging_failed_retention_days=2,
         staging_cleanup_interval_seconds=45.0,
         staging_cleanup_max_candidates=17,
