@@ -34,6 +34,10 @@ docker compose up -d db
 
 > **Note**: For any `APP_ENV` other than `test`, Gateway requires three distinct, non-example secrets (`API_TOKEN`, `EVIDENCE_READ_API_TOKEN`, and `EVIDENCE_CURSOR_SIGNING_KEY`); see `gateway/app/config.py`.
 
+## Export
+
+`GET /api/v1/export/conversations/{conversation_id}` (evidence-read token or API token) and `GET /api/v1/export/archive` (API token only) return a zip bundle with a SHA-256 manifest. Both are read-only: they do not update or delete evidence. See [`docs/EXPORT_BUNDLE.md`](docs/EXPORT_BUNDLE.md).
+
 ## Running tests
 
 Gateway tests require a dedicated test database named `qingyu_test` with migrations applied to the latest revision. If the database isn't migrated, the tests stop early and tell you to run `alembic upgrade head` against it.

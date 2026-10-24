@@ -17,7 +17,7 @@ Based on the code and tests in this repository as of October 2026:
 
 **Implemented and tested**
 
-- **Gateway (Phase 3 frozen + Amendment #1).** Content-addressed raw archive (SHA-256 + manifest), ChatGPT export import (zip upload, staging, retry, cleanup worker), normalized conversation/message/attachment evidence, and a GET-only Evidence Query API with its own read token and signed pagination cursors. 16 Alembic migrations. The Gateway test suite (347 passed, 6 skipped) passes against a local PostgreSQL 16.
+- **Gateway (Phase 3 frozen + Amendment #1).** Content-addressed raw archive (SHA-256 + manifest), ChatGPT export import (zip upload, staging, retry, cleanup worker), normalized conversation/message/attachment evidence, a GET-only Evidence Query API with its own read token and signed pagination cursors, and a GET-only export that packages a conversation or the full archive as a zip with a SHA-256 manifest. Export does not update or delete evidence. 16 Alembic migrations. The Gateway test suite (364 passed, 6 skipped) passes against a local PostgreSQL 16.
 - **Contracts.** Pydantic DTOs and JSON Schemas for `evidence-query-v1` and `core-identity-v1`, with tests.
 - **Core foundation pieces.** GENESIS service with an in-memory 2-of-3 test authority, continuity/epoch fencing checks, read-model and Gateway evidence clients, canonical JSON hashing, audit records. These have unit tests that run on plain Linux (see `ci/core-portable-tests.txt`).
 
@@ -121,7 +121,7 @@ curl http://127.0.0.1:8000/health
 curl -H "Authorization: Bearer $API_TOKEN" http://127.0.0.1:8000/api/v1/protected-ping
 ```
 
-Main endpoints: `POST /api/v1/import/chatgpt`, `GET /api/v1/import-jobs/{id}`, `POST /api/v1/archive/objects`, and `GET /api/v1/evidence/...`. Open `http://127.0.0.1:8000/docs` for the OpenAPI UI.
+Main endpoints: `POST /api/v1/import/chatgpt`, `GET /api/v1/import-jobs/{id}`, `POST /api/v1/archive/objects`, `GET /api/v1/evidence/...`, `GET /api/v1/export/conversations/{id}`, and `GET /api/v1/export/archive`. Open `http://127.0.0.1:8000/docs` for the OpenAPI UI. The export bundle format is described in [`gateway/docs/EXPORT_BUNDLE.md`](gateway/docs/EXPORT_BUNDLE.md).
 
 ### Running tests
 
