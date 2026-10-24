@@ -1,5 +1,7 @@
 # Backup / Restore / Rebuild Runbook
 
+The v0.1 operator commands are `python -m scripts.maintenance` (`backup`, `restore`, `upgrade`, `verify`), documented in [BACKUP_RESTORE_AND_UPGRADE.md](BACKUP_RESTORE_AND_UPGRADE.md). This runbook remains the Phase 3 sample-acceptance procedure. It is not the Linux production procedure.
+
 This runbook defines the Phase 3 backup unit and an isolated acceptance procedure. It is an operator workflow, not a one-click product feature.
 
 ## Backup unit
