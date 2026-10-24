@@ -4,6 +4,7 @@
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![状态：开发中](https://img.shields.io/badge/status-work%20in%20progress-orange)
+[![CI](https://github.com/tangwenhai839-create/qingyu/actions/workflows/ci.yml/badge.svg)](https://github.com/tangwenhai839-create/qingyu/actions/workflows/ci.yml)
 
 [English](README.md)
 
@@ -93,7 +94,7 @@ curl http://127.0.0.1:8000/health
 
 与上面的状态一致，不承诺时间：
 
-0. 启用 GitHub Actions CI：现成的工作流在 [`ci/github-actions-ci.yml`](ci/github-actions-ci.yml)，移到 `.github/workflows/` 即可。
+0. GitHub Actions CI 已启用，工作流在 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)（lint、contracts、PostgreSQL 16 上的 Gateway、可移植的 Core 子集）。
 1. 让 Core 全部测试能在 Linux CI 上运行。
 2. 解决 Core R1 验收阻塞，完成 phase-b2。
 3. 生产 GENESIS 与激活流程，配独立见证。

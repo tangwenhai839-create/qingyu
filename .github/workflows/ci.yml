@@ -47,6 +47,9 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -e ".[dev]"
+      # Backup tests invoke pg_dump/pg_restore and require client version 16,
+      # matching the service container. The runner image does not ship that client.
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
       - run: alembic upgrade head
       - run: pytest -q
 

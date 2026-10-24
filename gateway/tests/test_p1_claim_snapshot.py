@@ -170,7 +170,6 @@ WorkerRuntime.run_forever=bounded
 main()
 '''
     env=os.environ.copy(); env.update({
-        'DATABASE_URL':'postgresql+psycopg://qingyu:PASSWORD@127.0.0.1:5432/qingyu_test',
         'APP_ENV':'test','API_TOKEN':TOKEN_MARKER,'ARCHIVE_ROOT':str(root),
         'IMPORT_WORKER_POLL_SECONDS':'0.01','IMPORT_WORKER_HEARTBEAT_SECONDS':'0.02','IMPORT_WORKER_LEASE_SECONDS':'5',
     })
