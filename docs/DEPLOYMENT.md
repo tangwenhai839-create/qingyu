@@ -65,10 +65,10 @@ The PostgreSQL volume is `qingyu_postgres`. Losing it loses the database unless 
 For any `APP_ENV` other than `test`, startup requires three different values that are not empty and not one of `changeme`, `example`, `change-this-local-token`, or `change-me`:
 
 - `API_TOKEN` — bearer token for import, archive, and other operator routes
-- `EVIDENCE_READ_API_TOKEN` — bearer token for `GET /api/v1/evidence/...` only. It cannot call import, archive, or `/api/v1/protected-ping`. The operator token can also read evidence.
+- `EVIDENCE_READ_API_TOKEN` — bearer token for `GET /api/v1/evidence/...` and `GET /api/v1/export/conversations/{id}` only. It cannot call import, archive, the full archive export, or `/api/v1/protected-ping`. The operator token can also read and export evidence.
 - `EVIDENCE_CURSOR_SIGNING_KEY` — HMAC key for evidence cursors. It is not accepted as a bearer token. Replacing it makes existing cursors fail and does not change evidence rows.
 
-Bearer checks use `secrets.compare_digest`. There is one operator token and one evidence-read token. Do not run a real process with `APP_ENV=test`; that setting skips these checks. Generate values with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+Bearer checks use `secrets.compare_digest` against every active token. `API_TOKENS` and `EVIDENCE_READ_API_TOKENS` are optional comma-separated extra tokens accepted alongside the primaries, so a token can be rotated by overlap; see “Rotating access tokens” in `gateway/README.md`. Do not run a real process with `APP_ENV=test`; that setting skips these checks. Generate values with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 
 The Gateway test suite will not run against a database whose name is not `qingyu_test`. Do not point `TEST_DATABASE_URL` at the long-term `qingyu` database.
 
@@ -92,11 +92,17 @@ server {
 }
 ```
 
-`POST /api/v1/import/chatgpt` and `POST /api/v1/archive/objects` are limited to `IMPORT_UPLOAD_MAX_BYTES` plus 1 MiB of multipart overhead. The default `IMPORT_UPLOAD_MAX_BYTES` is 536870912, so the middleware limit is 537919488 bytes. A body above that returns 413. Other routes are not covered by that middleware.
+`POST /api/v1/import/chatgpt` and `POST /api/v1/archive/objects` are limited to `IMPORT_UPLOAD_MAX_BYTES` plus 1 MiB of multipart overhead. The default `IMPORT_UPLOAD_MAX_BYTES` is 536870912, so the middleware limit is 537919488 bytes. A body above that returns 413. Every other request body is limited to `REQUEST_BODY_MAX_BYTES` (default 1 MiB), and a repeated, negative, or non-integer `Content-Length` returns 400.
+
+The process also applies an in-process fixed-window rate limit (`RATE_LIMIT_REQUESTS` per `RATE_LIMIT_WINDOW_SECONDS`, default 600 per 60 seconds) keyed on the direct client address; `/health` is exempt. Because it does not read `X-Forwarded-For`, behind a local proxy every client shares the proxy's bucket. Size the limit for that, or enforce per-client limits in the proxy.
 
 ## Backups
 
 Back up three things together: a logical dump of database `qingyu`, `archive/objects/`, and `manifests/`. Do not treat `staging/` or a file copy of the running PostgreSQL data directory as that backup.
+
+The supported v0.1 tool is `python -m scripts.maintenance` (run from `gateway/` with `DATABASE_URL` in the environment): `backup`, `verify`, `restore` (only into a new empty database and archive root), and `upgrade` (forward-only, optionally taking a backup first). See `gateway/docs/BACKUP_RESTORE_AND_UPGRADE.md`.
+
+The Phase 3 sample-acceptance procedure is separate:
 
 `gateway/docs/BACKUP_RESTORE_RUNBOOK.md` is the written procedure. It uses PostgreSQL 16 `pg_dump --format=custom --no-owner --no-privileges --serializable-deferrable`, then a copy of `archive/objects` and `manifests`. Restore uses `pg_restore --no-owner --no-privileges --exit-on-error --single-transaction` into a new database, then checks file sizes and SHA-256 values against `archive_objects`. The inventory it describes must not contain database URLs, passwords, or bearer tokens.
 
@@ -110,7 +116,7 @@ There is no evidence-delete API. A restore is a new copy. It does not edit the s
 - The documented uvicorn command listens on `127.0.0.1:8000`.
 - Non-test startup rejects missing, example, or identical secrets. Comparisons use `secrets.compare_digest`.
 - SQLAlchemy is created with `hide_parameters=True`. Database failures returned to clients use an error code and a request id.
-- Evidence HTTP responses set `Cache-Control: private, no-store`.
-- The upload middleware above caps the two upload routes.
+- Evidence and export HTTP responses set `Cache-Control: private, no-store`.
+- The request-limit middleware caps the two upload routes and every other request body, and rate-limits per direct client address.
 - Staging cleanup does not delete committed archive objects, manifests, or evidence rows.
 - The OpenAPI UI is served by the same process at `/docs`. It is reachable by anyone who can reach the port. Keeping the process on `127.0.0.1`, behind the proxy, is what limits that.
