@@ -52,6 +52,10 @@ A single restart still drops in-flight connections. Overlapping two processes be
 
 Non-upload request bodies are limited to `REQUEST_BODY_MAX_BYTES` (default 1 MiB). Import and archive uploads keep `IMPORT_UPLOAD_MAX_BYTES` plus 1 MiB of multipart overhead. A repeated, negative, or non-integer `Content-Length` is rejected. The process also counts requests in a fixed window (`RATE_LIMIT_REQUESTS` per `RATE_LIMIT_WINDOW_SECONDS`, default 600 per 60 seconds) per direct client address. `/health` is not counted. The window is per process and does not honor `X-Forwarded-For`.
 
+## Backup, restore, and upgrade
+
+From this directory, `python -m scripts.maintenance` takes a logical backup, restores it into a new database, or applies forward-only Alembic upgrades. `staging/` is not part of a backup, and downgrade is not a supported operation. See [docs/BACKUP_RESTORE_AND_UPGRADE.md](docs/BACKUP_RESTORE_AND_UPGRADE.md). [docs/BACKUP_RESTORE_RUNBOOK.md](docs/BACKUP_RESTORE_RUNBOOK.md) is the separate Phase 3 sample-acceptance procedure.
+
 ## Running tests
 
 Gateway tests require a dedicated test database named `qingyu_test` with migrations applied to the latest revision. If the database isn't migrated, the tests stop early and tell you to run `alembic upgrade head` against it.
