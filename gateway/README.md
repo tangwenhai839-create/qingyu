@@ -34,6 +34,24 @@ docker compose up -d db
 
 > **Note**: For any `APP_ENV` other than `test`, Gateway requires three distinct, non-example secrets (`API_TOKEN`, `EVIDENCE_READ_API_TOKEN`, and `EVIDENCE_CURSOR_SIGNING_KEY`); see `gateway/app/config.py`.
 
+## Export
+
+`GET /api/v1/export/conversations/{conversation_id}` (evidence-read token or API token) and `GET /api/v1/export/archive` (API token only) return a zip bundle with a SHA-256 manifest. Both are read-only: they do not update or delete evidence. See [`docs/EXPORT_BUNDLE.md`](docs/EXPORT_BUNDLE.md).
+
+## Rotating access tokens
+
+`API_TOKEN` and `EVIDENCE_READ_API_TOKEN` are the primary tokens. `API_TOKENS` and `EVIDENCE_READ_API_TOKENS` are optional comma-separated tokens that are accepted at the same time. Bearer checks use `secrets.compare_digest` against every configured token.
+
+To rotate one process without a window where the old token is already dead and the new token is not live yet:
+
+1. Set the primary to the new token and put the old token in the matching extra list (or the other way around). Restart so both are active.
+2. Move clients to the new token.
+3. Remove the old token and restart again.
+
+A single restart still drops in-flight connections. Overlapping two processes behind the proxy, both configured with the old and new tokens, avoids that gap. The evidence-read token cannot call import, archive, or retry routes. The cursor signing key is not a bearer token; rotating it still invalidates outstanding evidence cursors and does not change evidence rows.
+
+Non-upload request bodies are limited to `REQUEST_BODY_MAX_BYTES` (default 1 MiB). Import and archive uploads keep `IMPORT_UPLOAD_MAX_BYTES` plus 1 MiB of multipart overhead. A repeated, negative, or non-integer `Content-Length` is rejected. The process also counts requests in a fixed window (`RATE_LIMIT_REQUESTS` per `RATE_LIMIT_WINDOW_SECONDS`, default 600 per 60 seconds) per direct client address. `/health` is not counted. The window is per process and does not honor `X-Forwarded-For`.
+
 ## Backup, restore, and upgrade
 
 From this directory, `python -m scripts.maintenance` takes a logical backup, restores it into a new database, or applies forward-only Alembic upgrades. `staging/` is not part of a backup, and downgrade is not a supported operation. See [docs/BACKUP_RESTORE_AND_UPGRADE.md](docs/BACKUP_RESTORE_AND_UPGRADE.md). [docs/BACKUP_RESTORE_RUNBOOK.md](docs/BACKUP_RESTORE_RUNBOOK.md) is the separate Phase 3 sample-acceptance procedure.
