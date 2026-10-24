@@ -96,6 +96,18 @@ server {
 
 The process also applies an in-process fixed-window rate limit (`RATE_LIMIT_REQUESTS` per `RATE_LIMIT_WINDOW_SECONDS`, default 600 per 60 seconds) keyed on the direct client address; `/health` is exempt. Because it does not read `X-Forwarded-For`, behind a local proxy every client shares the proxy's bucket. Size the limit for that, or enforce per-client limits in the proxy.
 
+## Logging and metrics
+
+`LOG_LEVEL` is the standard library level (`INFO` by default). An unknown level falls back to `INFO`. `LOG_FORMAT` is `text` or `json`. `text` is the default. `json` writes one JSON object per line with `timestamp`, `level`, `logger`, `message`, and `request_id`, plus any extra fields the record already carries. Anything other than those two formats stops the process at startup. The import worker reads the same two settings when it starts.
+
+Every HTTP response carries `X-Request-ID`. A single incoming value of 1–128 characters from `[A-Za-z0-9._-]` is echoed. A missing, repeated, or otherwise unusable value is replaced with a new id, so a client cannot put a line break or a space into the log. The same id is included on log records emitted while the request is handled, and on the `request_id` field of the JSON error bodies the API already returns.
+
+Access logs are one line per request from the logger `qingyu.access`: method, path, status, duration, request id, and the direct peer address. The path has no query string. Headers, bearer tokens, and request or response bodies are not written. `/health` is included.
+
+`GET /metrics` returns Prometheus text (`text/plain; version=0.0.4`). It is not in the OpenAPI schema and it responds 404 until `METRICS_ENABLED=true`. The series are `qingyu_http_requests_total` and `qingyu_http_request_duration_seconds` (a histogram), both labeled with the route template and the status code. Unmatched paths use the label `unmatched`, so a scan of random URLs does not create a series per path. The numbers belong to this process only; a second worker or a second uvicorn process has its own.
+
+`METRICS_TOKEN`, when non-empty, requires `Authorization: Bearer <METRICS_TOKEN>`. The operator API token is not accepted unless you set `METRICS_TOKEN` to that same value. A scraper credential therefore does not grant import or archive access. When `METRICS_TOKEN` is empty and metrics are enabled, anyone who can reach the port can read the counters. Leave the process on `127.0.0.1` or set a token. The token is not written to the access log or the metrics body.
+
 ## Backups
 
 Back up three things together: a logical dump of database `qingyu`, `archive/objects/`, and `manifests/`. Do not treat `staging/` or a file copy of the running PostgreSQL data directory as that backup.
@@ -117,6 +129,8 @@ There is no evidence-delete API. A restore is a new copy. It does not edit the s
 - Non-test startup rejects missing, example, or identical secrets. Comparisons use `secrets.compare_digest`.
 - SQLAlchemy is created with `hide_parameters=True`. Database failures returned to clients use an error code and a request id.
 - Evidence and export HTTP responses set `Cache-Control: private, no-store`.
+- Logs are text unless `LOG_FORMAT=json`. Responses echo `X-Request-ID`. Access logs omit the query string, headers, tokens, and bodies.
+- `GET /metrics` is disabled unless `METRICS_ENABLED=true`, and `METRICS_TOKEN` can require a bearer token that is separate from `API_TOKEN`.
 - The request-limit middleware caps the two upload routes and every other request body, and rate-limits per direct client address.
 - Staging cleanup does not delete committed archive objects, manifests, or evidence rows.
 - The OpenAPI UI is served by the same process at `/docs`. It is reachable by anyone who can reach the port. Keeping the process on `127.0.0.1`, behind the proxy, is what limits that.

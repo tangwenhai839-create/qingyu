@@ -1,9 +1,16 @@
 from functools import lru_cache
 import secrets
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 _FORBIDDEN_SECRETS = {"", "changeme", "example", "change-this-local-token", "change-me"}
+
+
+def normalize_log_format(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized not in {"json", "text"}:
+        raise ValueError("LOG_FORMAT must be json or text")
+    return normalized
 
 
 def split_token_list(value: str) -> tuple[str, ...]:
@@ -48,6 +55,9 @@ class Settings(BaseSettings):
     evidence_cursor_signing_key: str = ""
     database_url: str | None = None
     log_level: str = "INFO"
+    log_format: str = "text"
+    metrics_enabled: bool = False
+    metrics_token: str = ""
     archive_root: str = "<repo>/data"
     staging_failed_retention_days: int = Field(default=7, ge=0)
     staging_cleanup_interval_seconds: float = Field(default=300.0, gt=0)
@@ -58,6 +68,11 @@ class Settings(BaseSettings):
     rate_limit_requests: int = Field(default=600, gt=0)
     rate_limit_window_seconds: float = Field(default=60.0, gt=0)
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @field_validator("log_format")
+    @classmethod
+    def _valid_log_format(cls, value: str) -> str:
+        return normalize_log_format(value)
 
     def active_api_tokens(self) -> tuple[str, ...]:
         """Primary API token plus every additional token. All are active."""

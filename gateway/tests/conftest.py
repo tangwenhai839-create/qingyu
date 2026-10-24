@@ -83,6 +83,11 @@ os.environ["EVIDENCE_CURSOR_SIGNING_KEY"] = os.getenv(
 # Force the flag off even if the parent environment turned it on. Tests that
 # cover the limiter turn it back on for that test only.
 os.environ["RATE_LIMIT_ENABLED"] = "false"
+# Operator shells may export these. The suite's default is text logs and no
+# metrics endpoint, matching a process that has not opted in.
+os.environ["LOG_FORMAT"] = "text"
+os.environ["METRICS_ENABLED"] = "false"
+os.environ["METRICS_TOKEN"] = ""
 
 
 @pytest.fixture(scope="session", autouse=True)

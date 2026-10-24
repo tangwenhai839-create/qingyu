@@ -52,6 +52,8 @@ A single restart still drops in-flight connections. Overlapping two processes be
 
 Non-upload request bodies are limited to `REQUEST_BODY_MAX_BYTES` (default 1 MiB). Import and archive uploads keep `IMPORT_UPLOAD_MAX_BYTES` plus 1 MiB of multipart overhead. A repeated, negative, or non-integer `Content-Length` is rejected. The process also counts requests in a fixed window (`RATE_LIMIT_REQUESTS` per `RATE_LIMIT_WINDOW_SECONDS`, default 600 per 60 seconds) per direct client address. `/health` is not counted. The window is per process and does not honor `X-Forwarded-For`.
 
+`LOG_FORMAT` is `text` or `json` (`LOG_LEVEL` selects the level). Each response echoes `X-Request-ID`, which is the caller's value when that header is a single short token and a generated id otherwise. Access logs record the method, path, status, duration, request id, and direct peer. They do not record the query string, headers, tokens, or bodies. `GET /metrics` is off unless `METRICS_ENABLED=true`. It exposes per-process request count and latency by route template and status. `METRICS_TOKEN`, when set, is a separate bearer token for that endpoint. See [../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).
+
 ## Backup, restore, and upgrade
 
 From this directory, `python -m scripts.maintenance` takes a logical backup, restores it into a new database, or applies forward-only Alembic upgrades. `staging/` is not part of a backup, and downgrade is not a supported operation. See [docs/BACKUP_RESTORE_AND_UPGRADE.md](docs/BACKUP_RESTORE_AND_UPGRADE.md). [docs/BACKUP_RESTORE_RUNBOOK.md](docs/BACKUP_RESTORE_RUNBOOK.md) is the separate Phase 3 sample-acceptance procedure.
