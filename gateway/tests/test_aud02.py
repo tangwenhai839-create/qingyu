@@ -1,9 +1,19 @@
 import uuid
+
+from app.db import engine
+from app.importers.service import ImportService
+from app.models import (
+    ArchiveObject,
+    Conversation,
+    ImportJob,
+    Message,
+    MessageObservation,
+    MessageRevision,
+    SourceAccount,
+)
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
-from app.db import engine
-from app.models import ArchiveObject, ImportJob, SourceAccount, Conversation, MessageObservation, MessageRevision, Message
-from app.importers.service import ImportService
+
 
 def _payload(ids):
     return {"schema_marker":"qingyu-fixture-v1","conversations":[{"id": i, "title":"t", "mapping":{}, "current_node":None} for i in ids]}

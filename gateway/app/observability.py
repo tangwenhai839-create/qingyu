@@ -24,7 +24,6 @@ from fastapi import HTTPException
 
 from .config import get_settings
 
-
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
 _request_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(

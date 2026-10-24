@@ -3,13 +3,10 @@ import os
 import shutil
 import uuid
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
-
 from app.db import engine
 from app.importers.processor import ImportProcessor
 from app.importers.query import EvidenceTreeQuery, ImportedTreeQuery
@@ -32,7 +29,8 @@ from app.models import (
     MessageRevision,
     SourceAccount,
 )
-
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
 
 EXPECTED_SAMPLE_SHA256 = "04c54e6f87bd2113c5183ba7a2f24b2694c333e5eab6f42308f654063ee4b040"
 
@@ -123,7 +121,7 @@ def test_sample_001_normalized_evidence_reconstructs_complete_tree():
             status="running",
             attempt_count=1,
             lease_token=uuid.uuid4(),
-            lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            lease_expires_at=datetime.now(UTC) + timedelta(minutes=5),
             report_json={},
         )
         db.add(job)
@@ -216,7 +214,7 @@ def test_sample_001_normalized_evidence_reconstructs_complete_tree():
         persisted_job = db.get(ImportJob, job.id)
         persisted_job.status = "running"
         persisted_job.lease_token = clean_token
-        persisted_job.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        persisted_job.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
         db.commit()
         assert ImportWorker(db).mark_failed_or_partial(
             job.id, clean_token, "forced_replay", {"errors": []}, "forced_replay"
@@ -227,7 +225,7 @@ def test_sample_001_normalized_evidence_reconstructs_complete_tree():
         clean_replay_job.status = "running"
         clean_replay_job.attempt_count = 2
         clean_replay_job.lease_token = clean_token
-        clean_replay_job.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        clean_replay_job.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
         db.commit()
         clean_result = ImportProcessor(db, root).process(clean_replay_job, clean_token)
         assert clean_result["attachments"]["available"] == 9
@@ -281,7 +279,7 @@ def test_sample_001_normalized_evidence_reconstructs_complete_tree():
         persisted_job = db.get(ImportJob, job.id)
         persisted_job.status = "running"
         persisted_job.lease_token = replay_token
-        persisted_job.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        persisted_job.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
         db.commit()
         assert ImportWorker(db).mark_failed_or_partial(
             job.id,
@@ -296,7 +294,7 @@ def test_sample_001_normalized_evidence_reconstructs_complete_tree():
         replay_job.status = "running"
         replay_job.attempt_count = 3
         replay_job.lease_token = replay_token
-        replay_job.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        replay_job.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
         db.commit()
         observation_count = db.scalar(
             select(__import__("sqlalchemy").func.count())
@@ -326,7 +324,7 @@ def test_sample_001_normalized_evidence_reconstructs_complete_tree():
         missing_replay_job.status = "running"
         missing_replay_job.attempt_count = 4
         missing_replay_job.lease_token = missing_token
-        missing_replay_job.lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        missing_replay_job.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
         db.commit()
         missing_count = db.scalar(
             select(__import__("sqlalchemy").func.count())
@@ -372,7 +370,7 @@ def test_real_export_partial_retry_replays_snapshot_without_repair():
         archive = ArchiveObject(sha256=uuid.uuid4().hex * 2, size_bytes=1, relative_path="unused", media_type="application/zip", integrity_status="verified", metadata_json={})
         account = SourceAccount(platform="chatgpt", account_label=f"retry-{uuid.uuid4()}", metadata_json={})
         db.add_all([archive, account]); db.flush()
-        job = ImportJob(source_account_id=account.id, archive_object_id=archive.id, parser_name="pending-detection", parser_version="1", status="running", attempt_count=1, max_attempts=3, lease_token=token, lease_expires_at=datetime.now(timezone.utc)+timedelta(minutes=5), report_json={})
+        job = ImportJob(source_account_id=account.id, archive_object_id=archive.id, parser_name="pending-detection", parser_version="1", status="running", attempt_count=1, max_attempts=3, lease_token=token, lease_expires_at=datetime.now(UTC)+timedelta(minutes=5), report_json={})
         db.add(job); db.commit()
 
         calls = 0
@@ -390,7 +388,7 @@ def test_real_export_partial_retry_replays_snapshot_without_repair():
         db.expire_all()
         retried = db.get(ImportJob, job.id)
         new_token = uuid.uuid4()
-        retried.status = "running"; retried.attempt_count = 2; retried.lease_token = new_token; retried.lease_expires_at = datetime.now(timezone.utc)+timedelta(minutes=5)
+        retried.status = "running"; retried.attempt_count = 2; retried.lease_token = new_token; retried.lease_expires_at = datetime.now(UTC)+timedelta(minutes=5)
         db.commit()
         outcome = ImportService(db).import_fixture(payload, archive.id, job=retried, lease_token=new_token, source_member="conversations.json", parser=parser, parsed_conversations=parsed)
         assert outcome.counts["discovered_count"] == 2

@@ -1,15 +1,15 @@
-from pathlib import Path
-from datetime import datetime, timedelta, timezone
-from app.importers.cleanup import cleanup_failed_staging
-from sqlalchemy.orm import Session
 from app.db import engine
+from app.importers.cleanup import cleanup_failed_staging
 from app.importers.generic import ParserRegistry
 from app.importers.report import empty_report
+from sqlalchemy.orm import Session
+
 
 def test_cleanup_dry_run_and_protected_attempt(tmp_path):
     import uuid
     old = tmp_path/'staging'/str(uuid.uuid4())/'1'/str(uuid.uuid4()); old.mkdir(parents=True); old.touch()
-    import os, time
+    import os
+    import time
     old_time = time.time() - 10*86400; os.utime(old, (old_time, old_time))
     with Session(engine) as db:
         assert cleanup_failed_staging(tmp_path, db, retention_days=7, dry_run=True, protected_paths=[old]).skipped_active == [old.resolve()]

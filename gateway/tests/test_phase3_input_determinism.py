@@ -3,13 +3,12 @@ import json
 import zipfile
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-from sqlalchemy import delete
-from sqlalchemy.orm import Session
-
 from app.config import get_settings
 from app.db import engine
-from app.importers.generic import canonical_attachment_descriptor, stable_attachment_keys
+from app.importers.generic import (
+    canonical_attachment_descriptor,
+    stable_attachment_keys,
+)
 from app.importers.worker_runtime import WorkerRuntime
 from app.main import app
 from app.models import (
@@ -23,7 +22,9 @@ from app.models import (
     MessageRevision,
     SourceAccount,
 )
-
+from fastapi.testclient import TestClient
+from sqlalchemy import delete
+from sqlalchemy.orm import Session
 
 HEADERS = {"Authorization": "Bearer qingyu-test-token-only"}
 

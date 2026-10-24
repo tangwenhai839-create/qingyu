@@ -1,18 +1,18 @@
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from contextlib import contextmanager
 import os
-from pathlib import Path
 import stat
 import time
 import uuid
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models import ImportJob
-from .status import ACTIVE_STATUSES, TERMINAL_STATUSES
 from .staging import NAMESPACES, UnsafeStagingRoot, enqueue_staging_candidate, held_lock
+from .status import ACTIVE_STATUSES, TERMINAL_STATUSES
 
 TREE_ENTRY_BUDGET = 10000
 
@@ -96,7 +96,7 @@ def cleanup_staging(
     except UnsafeStagingPath:
         result.record("skipped_unknown", _lexical_path(Path(root) / "staging"))
         return result
-    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
     protected = {_identity(Path(path)) for path in (protected_paths or [])}
     # Leftover quarantine is always offered the first bounded cleanup slot,
     # without consuming the regular slot needed for eventual namespace progress.
@@ -163,7 +163,7 @@ def _cleanup_job_candidates(base, db, cutoff, protected, result, dry_run, budget
             if preliminary != "deletable":
                 result.record(preliminary, path); continue
             try:
-                modified = datetime.fromtimestamp(os.lstat(path).st_mtime, timezone.utc)
+                modified = datetime.fromtimestamp(os.lstat(path).st_mtime, UTC)
             except OSError:
                 result.record("failed", path); continue
             if modified >= cutoff:
@@ -301,7 +301,7 @@ def _abandoned_generation_is_eligible(path, base, cutoff, result, dry_run):
         result.record("failed", path)
         return False
     try:
-        modified = datetime.fromtimestamp(os.lstat(path).st_mtime, timezone.utc)
+        modified = datetime.fromtimestamp(os.lstat(path).st_mtime, UTC)
     except OSError:
         result.record("failed", path); return False
     if modified >= cutoff:
@@ -646,19 +646,16 @@ def _tree_is_safe(candidate: Path, base: Path, *, max_nodes: int | None = None) 
             raise CleanupBudgetExhausted("staging_tree_scan_budget_exhausted")
         if not _inside(current, base) or _is_link_like(current):
             return False
-        try:
-            with os.scandir(current) as entries:
-                for entry in entries:
-                    visited += 1
-                    if visited > max_nodes:
-                        raise CleanupBudgetExhausted("staging_tree_scan_budget_exhausted")
-                    child = _lexical_path(Path(entry.path))
-                    if not _inside(child, candidate) or _is_link_like(child):
-                        return False
-                    if entry.is_dir(follow_symlinks=False):
-                        stack.append(child)
-        except OSError:
-            raise
+        with os.scandir(current) as entries:
+            for entry in entries:
+                visited += 1
+                if visited > max_nodes:
+                    raise CleanupBudgetExhausted("staging_tree_scan_budget_exhausted")
+                child = _lexical_path(Path(entry.path))
+                if not _inside(child, candidate) or _is_link_like(child):
+                    return False
+                if entry.is_dir(follow_symlinks=False):
+                    stack.append(child)
     try:
         resolved_base = base.resolve(strict=True)
         resolved_candidate = candidate.resolve(strict=True)

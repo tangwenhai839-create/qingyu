@@ -1,9 +1,8 @@
 from types import SimpleNamespace
 
 import pytest
-
-from app.importers.generic import GenericTreeParser, ParserRegistry
 from app.importers import processor as processor_module
+from app.importers.generic import GenericTreeParser, ParserRegistry
 from app.importers.processor import ImportProcessor, NonRetryablePreflightError
 from app.importers.retry_policy import (
     ARCHIVE_INTEGRITY_FAILURE,

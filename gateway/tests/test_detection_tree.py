@@ -1,5 +1,6 @@
-from app.importers.generic import GenericTreeParser, ParserRegistry, ParsedMessage
-from app.importers.tree import TreeValidator, TreeQuery
+from app.importers.generic import ParsedMessage, ParserRegistry
+from app.importers.tree import TreeQuery, TreeValidator
+
 
 def test_filename_does_not_select_parser():
     assert ParserRegistry().detect({"conversations": []})[0] == "unsupported_real_chatgpt_export"

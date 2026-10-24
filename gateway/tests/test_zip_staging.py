@@ -1,7 +1,9 @@
 import zipfile
 from pathlib import Path
+
 import pytest
-from app.importers.zip_staging import safe_extract, UnsafeZipError, ZipLimits
+from app.importers.zip_staging import UnsafeZipError, ZipLimits, safe_extract
+
 
 def make_zip(path: Path, name: str, data: bytes) -> None:
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as z:

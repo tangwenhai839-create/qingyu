@@ -8,9 +8,6 @@ import time
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
-
 from app.auth import token_matches
 from app.config import Settings, get_settings
 from app.main import app
@@ -20,6 +17,8 @@ from app.request_limits import (
     ImportRequestSizeLimitMiddleware,
     RateLimitMiddleware,
 )
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 API_TOKEN = "qingyu-test-token-only"
 READ_TOKEN = "qingyu-test-evidence-read-token-only"

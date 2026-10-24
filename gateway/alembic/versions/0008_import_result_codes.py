@@ -1,11 +1,13 @@
 """separate lifecycle and result codes"""
-from typing import Sequence, Union
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
+from alembic import op
+
 revision: str = "0008_import_result_codes"
-down_revision: Union[str, None] = "0007_import_lease_fencing"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "0007_import_lease_fencing"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.add_column("import_jobs", sa.Column("result_code", sa.String(64), nullable=True))
     op.add_column("import_jobs", sa.Column("error_code", sa.String(64), nullable=True))

@@ -1,8 +1,10 @@
-import json
 
 import pytest
-
-from app.importers.generic import GenericTreeParser, ParserValidationError, canonical_attachment_descriptor
+from app.importers.generic import (
+    GenericTreeParser,
+    ParserValidationError,
+    canonical_attachment_descriptor,
+)
 from app.importers.revision import compute_revision_fingerprint
 
 

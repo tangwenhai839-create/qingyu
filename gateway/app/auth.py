@@ -1,7 +1,9 @@
-from typing import Annotated
 import secrets
+from typing import Annotated
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
 from .config import Settings, get_settings
 
 bearer = HTTPBearer(auto_error=False)

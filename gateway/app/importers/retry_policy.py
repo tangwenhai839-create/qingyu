@@ -3,7 +3,6 @@ from collections.abc import Iterable
 from .generic import ParserRegistry
 from .status import PARTIAL
 
-
 ARCHIVE_INTEGRITY_FAILURE = "archive_integrity_failure"
 PARSER_CONTRACT_UNAVAILABLE = "parser_contract_unavailable"
 PARSER_CONTRACT_CONFLICT = "parser_contract_conflict"

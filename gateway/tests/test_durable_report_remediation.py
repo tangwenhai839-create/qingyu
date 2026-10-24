@@ -1,16 +1,16 @@
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, delete
-from sqlalchemy.orm import Session
-
-from app.importers.report import empty_report
 from app.importers.generic import GenericTreeParser
+from app.importers.report import empty_report
 from app.importers.service import ImportService
-from app.importers.worker import DurableLedgerInconsistent, ImportWorker, aggregate_durable_job_state
+from app.importers.worker import (
+    DurableLedgerInconsistent,
+    ImportWorker,
+    aggregate_durable_job_state,
+)
 from app.main import app
 from app.models import (
     ArchiveObject,
@@ -25,6 +25,9 @@ from app.models import (
     MessageRevision,
     SourceAccount,
 )
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, delete
+from sqlalchemy.orm import Session
 
 DB_URL = os.environ["TEST_DATABASE_URL"]
 HEADERS = {"Authorization": "Bearer qingyu-test-token-only"}
@@ -105,7 +108,7 @@ def test_exhausted_stale_recovery_uses_same_durable_snapshot(durable_env):
     _batch(db, claim, 1, new_messages=2, anomaly="committed")
     job = db.get(ImportJob, claim.id)
     job.report_json = {"messages": {"new": 700}, "errors": [{"type": "crash"}]}
-    job.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    job.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
     db.commit()
 
     assert ImportWorker(db).recover_stale() == 1

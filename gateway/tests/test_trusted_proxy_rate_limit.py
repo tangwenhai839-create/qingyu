@@ -1,16 +1,14 @@
 """TRUSTED_PROXIES: the rate limit follows a proxy's client only when the peer is trusted."""
 
 import asyncio
-import json
 
 import pytest
-from fastapi.testclient import TestClient
-from pydantic import ValidationError
-
 from app.client_ip import client_ip, parse_trusted_proxies
 from app.config import Settings, get_settings
 from app.main import app
 from app.request_limits import FixedWindowRateLimiter, RateLimitMiddleware
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 PING = "/api/v1/protected-ping"
 API_TOKEN = "qingyu-test-token-only"

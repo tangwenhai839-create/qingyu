@@ -6,14 +6,12 @@ from pathlib import Path
 
 import pytest
 from alembic.config import Config
-from sqlalchemy import Integer, create_engine, inspect, text
-from sqlalchemy.engine import make_url
-
 from app.database_config import apply_alembic_database_url, configured_database_url
 from app.db import engine
 from app.models import ImportJob
 from conftest import validated_url
-
+from sqlalchemy import Integer, create_engine, inspect, text
+from sqlalchemy.engine import make_url
 
 COUNTER_DEFAULTS = {
     'discovered_count':'0', 'imported_count':'0', 'skipped_count':'0',
@@ -97,7 +95,7 @@ def test_runtime_fails_closed_without_database_url_or_env_file(tmp_path):
         [sys.executable,'-m','app.importers.worker_runtime'],
         cwd=tmp_path,
         env={**_environment_without_database_url(),'PYTHONPATH':str(Path(__file__).parents[1])},
-        capture_output=True,text=True,timeout=15,
+        capture_output=True,text=True,timeout=15,check=False,
     )
     output=result.stdout+result.stderr
     assert result.returncode != 0
@@ -121,7 +119,7 @@ def test_alembic_fails_closed_without_database_url_and_ignores_stale_ini(tmp_pat
     )
     result=subprocess.run(
         [sys.executable,'-m','alembic','-c',str(config),'current'],
-        cwd=tmp_path,env=_environment_without_database_url(),capture_output=True,text=True,timeout=15,
+        cwd=tmp_path,env=_environment_without_database_url(),capture_output=True,text=True,timeout=15,check=False,
     )
     output=result.stdout+result.stderr
     assert result.returncode != 0
@@ -149,7 +147,7 @@ def test_invalid_database_url_is_rejected_without_secret_or_traceback(tmp_path,c
         )
     env=_environment_without_database_url()
     env.update({'DATABASE_URL':'not-a-valid-url-SUPER_SECRET_DB_PASSWORD_123','PYTHONPATH':str(repository)})
-    result=subprocess.run(command,cwd=tmp_path,env=env,capture_output=True,text=True,timeout=15)
+    result=subprocess.run(command,cwd=tmp_path,env=env,capture_output=True,text=True,timeout=15,check=False)
     output=result.stdout+result.stderr
     assert result.returncode != 0
     assert 'database_url_invalid' in output
@@ -167,7 +165,7 @@ def test_alembic_connection_failure_is_redacted_without_traceback():
     })
     result=subprocess.run(
         [sys.executable,'-m','alembic','current'],
-        cwd=Path(__file__).parents[1],env=env,capture_output=True,text=True,timeout=15,
+        cwd=Path(__file__).parents[1],env=env,capture_output=True,text=True,timeout=15,check=False,
     )
     output=result.stdout+result.stderr
     assert result.returncode != 0

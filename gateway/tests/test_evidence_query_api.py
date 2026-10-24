@@ -1,13 +1,9 @@
-from datetime import datetime, timezone
 import base64
 import json
-from types import SimpleNamespace
 import uuid
+from datetime import UTC, datetime
 
-from fastapi.testclient import TestClient
 import pytest
-from sqlalchemy.exc import SQLAlchemyError
-
 from app.config import Settings
 from app.db import get_db
 from app.evidence.cursor import encode_cursor
@@ -18,14 +14,15 @@ from app.evidence.query import (
     QueryPage,
 )
 from app.main import app
-
+from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 
 READ_HEADERS = {"Authorization": "Bearer qingyu-test-evidence-read-token-only"}
 ADMIN_HEADERS = {"Authorization": "Bearer qingyu-test-token-only"}
 
 
 def _summary(**overrides):
-    now = datetime(2026, 1, 2, 3, 4, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 2, 3, 4, tzinfo=UTC)
     values = {
         "conversation_observation_id": uuid.uuid4(),
         "import_batch_commit_id": uuid.uuid4(),
@@ -207,7 +204,7 @@ def test_attachment_attempts_are_observation_scoped_and_keyset_paginated(monkeyp
     observation_id = uuid.uuid4()
     attachment_id = uuid.uuid4()
     other_observation_id = uuid.uuid4()
-    now = datetime(2026, 1, 2, 3, 4, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 2, 3, 4, tzinfo=UTC)
     attempts = [
         {
             "attachment_observation_id": uuid.uuid4(),

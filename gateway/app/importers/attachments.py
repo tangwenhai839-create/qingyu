@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
 import re
 import stat
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
 
 from ..archive.service import ArchiveIntegrityError, ArchiveService, PreparedObject
 from .generic import ParsedAttachment, ParsedConversation

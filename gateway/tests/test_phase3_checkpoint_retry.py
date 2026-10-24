@@ -2,14 +2,9 @@ import os
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import delete, event, inspect, select, update
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
-
 from app.db import engine
 from app.importers.cleanup import cleanup_failed_staging
 from app.importers.generic import GenericTreeParser
@@ -28,7 +23,10 @@ from app.models import (
     MessageRevision,
     SourceAccount,
 )
-
+from fastapi.testclient import TestClient
+from sqlalchemy import delete, event, inspect, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 HEADERS = {"Authorization": "Bearer qingyu-test-token-only"}
 
@@ -123,7 +121,7 @@ def test_checkpoint_lags_safely_then_retry_replays_without_duplicates(clean_db, 
 
     monkeypatch.setattr(ImportWorker, "advance_checkpoint", original)
     current = db.get(ImportJob, job.id)
-    current.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    current.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
     db.commit()
     assert ImportWorker(db).recover_stale() == 1
     claim_b = ImportWorker(db).claim_next(60)
@@ -330,7 +328,7 @@ def test_failed_job_without_durable_batches_can_retry_with_current_parser(clean_
 def test_exhausted_stale_job_uses_ledger_for_partial(clean_db):
     db = clean_db; job = _pending_job(db); claim = ImportWorker(db).claim_next(60)
     ImportService(db).import_fixture(_payload("durable"), job.archive_object_id, job=claim, lease_token=claim.lease_token)
-    current = db.get(ImportJob, job.id); current.max_attempts = current.attempt_count; current.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1); db.commit()
+    current = db.get(ImportJob, job.id); current.max_attempts = current.attempt_count; current.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1); db.commit()
     assert ImportWorker(db).recover_stale() == 1
     db.expire_all(); current = db.get(ImportJob, job.id)
     assert current.status == PARTIAL and current.result_code == PARTIAL
@@ -350,7 +348,7 @@ def test_exhausted_stale_job_uses_ledger_for_partial(clean_db):
 def test_stale_worker_cannot_checkpoint_or_finalize_partial(clean_db):
     db = clean_db; job = _pending_job(db); claim_a = ImportWorker(db).claim_next(60)
     ImportService(db).import_fixture(_payload("owned"), job.archive_object_id, job=claim_a, lease_token=claim_a.lease_token)
-    current = db.get(ImportJob, job.id); current.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1); db.commit()
+    current = db.get(ImportJob, job.id); current.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1); db.commit()
     assert ImportWorker(db).recover_stale() == 1
     claim_b = ImportWorker(db).claim_next(60)
     assert not ImportWorker(db).advance_checkpoint(job.id, claim_a.lease_token, 1, "fixture.json:conversation:0")

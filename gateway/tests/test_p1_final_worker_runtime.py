@@ -9,15 +9,23 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from sqlalchemy import delete
-from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import Session
-
 from app.db import engine
 from app.importers.processor import ImportProcessor
 from app.importers.worker import ImportWorker
 from app.importers.worker_runtime import WorkerRuntime
-from app.models import ArchiveObject, Attachment, Conversation, ImportJob, Message, MessageObservation, MessageRevision, SourceAccount
+from app.models import (
+    ArchiveObject,
+    Attachment,
+    Conversation,
+    ImportJob,
+    Message,
+    MessageObservation,
+    MessageRevision,
+    SourceAccount,
+)
+from sqlalchemy import delete
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 
 
 def _clear(db):

@@ -1,11 +1,14 @@
+import os
+import time
+import uuid
+from pathlib import Path
+
+from app.db import engine
 from app.importers.cleanup import cleanup_failed_staging
 from app.importers.generic import ParsedMessage
 from app.importers.tree import TreeQuery
-from pathlib import Path
-import os, time
-import uuid
 from sqlalchemy.orm import Session
-from app.db import engine
+
 
 def test_cleanup_old_attempt(tmp_path: Path):
     p=tmp_path/'staging'/str(uuid.uuid4())/'1'/str(uuid.uuid4()); p.mkdir(parents=True); (p/'x').write_text('x'); old=time.time()-9*86400; os.utime(p,(old,old))
