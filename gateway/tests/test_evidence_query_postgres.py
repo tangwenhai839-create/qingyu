@@ -1,7 +1,5 @@
-from datetime import datetime, timedelta, timezone
 import uuid
-
-from sqlalchemy.orm import Session
+from datetime import UTC, datetime, timedelta
 
 from app.evidence.query import EvidenceQueryService
 from app.models import (
@@ -19,6 +17,7 @@ from app.models import (
     MessageRevision,
     SourceAccount,
 )
+from sqlalchemy.orm import Session
 
 
 def _fingerprint(character: str) -> str:
@@ -31,7 +30,7 @@ def test_real_postgres_evidence_queries_and_keyset_joins(verified_test_database)
     transaction = connection.begin()
     db = Session(bind=connection)
     try:
-        now = datetime(2026, 1, 2, 3, 4, tzinfo=timezone.utc)
+        now = datetime(2026, 1, 2, 3, 4, tzinfo=UTC)
         archive = ArchiveObject(
             id=uuid.uuid4(),
             sha256=_fingerprint("a"),

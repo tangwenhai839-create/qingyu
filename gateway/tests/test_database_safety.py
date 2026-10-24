@@ -2,15 +2,14 @@ import os
 import re
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.exc import ProgrammingError
-
 from conftest import (
     get_expected_alembic_head,
     validate_test_database_url,
     verify_connected_database,
     verify_database_migrations,
 )
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import ProgrammingError
 
 
 class _Connection:

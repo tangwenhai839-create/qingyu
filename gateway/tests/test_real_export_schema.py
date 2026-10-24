@@ -5,10 +5,6 @@ import uuid
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, inspect, select, text, update
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
-
 from app.models import (
     ArchiveObject,
     Conversation,
@@ -22,7 +18,9 @@ from app.models import (
     SourceAccount,
 )
 from conftest import validated_url
-
+from sqlalchemy import create_engine, inspect, text, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 REPOSITORY = Path(__file__).parents[1]
 HEAD = "0016_real_export_evidence"
@@ -347,10 +345,9 @@ def test_database_rejects_cross_conversation_mapping_links(schema_session, inval
         )
     else:
         row = _mapping_row(graph, message_revision_id=graph["revision_b"].id)
-    with pytest.raises(IntegrityError):
-        with schema_session.begin_nested():
-            schema_session.add(row)
-            schema_session.flush()
+    with pytest.raises(IntegrityError), schema_session.begin_nested():
+        schema_session.add(row)
+        schema_session.flush()
 
 
 def test_database_rejects_cross_conversation_current_node(schema_session):
@@ -386,10 +383,9 @@ def test_database_rejects_cross_conversation_current_node(schema_session):
         canonical_fragment_fingerprint="6" * 64,
         fragment_fingerprint_version="canonical-json-v1",
     )
-    with pytest.raises(IntegrityError):
-        with schema_session.begin_nested():
-            schema_session.add(bad)
-            schema_session.flush()
+    with pytest.raises(IntegrityError), schema_session.begin_nested():
+        schema_session.add(bad)
+        schema_session.flush()
 
 
 def test_database_rejects_parent_external_id_entity_mismatch(schema_session):
@@ -399,31 +395,28 @@ def test_database_rejects_parent_external_id_entity_mismatch(schema_session):
         external_parent_node_id=graph["node_a"].external_node_id,
         parent_conversation_node_id=graph["parent_a"].id,
     )
-    with pytest.raises(IntegrityError):
-        with schema_session.begin_nested():
-            schema_session.add(row)
-            schema_session.flush()
+    with pytest.raises(IntegrityError), schema_session.begin_nested():
+        schema_session.add(row)
+        schema_session.flush()
 
 
 def test_database_rejects_parent_entity_with_null_external_id(schema_session):
     graph = _evidence_graph(schema_session)
     row = _mapping_row(graph, external_parent_node_id=None)
-    with pytest.raises(IntegrityError):
-        with schema_session.begin_nested():
-            schema_session.add(row)
-            schema_session.flush()
+    with pytest.raises(IntegrityError), schema_session.begin_nested():
+        schema_session.add(row)
+        schema_session.flush()
 
 
 def test_database_rejects_current_external_id_entity_mismatch(schema_session):
     graph = _evidence_graph(schema_session)
-    with pytest.raises(IntegrityError):
-        with schema_session.begin_nested():
-            schema_session.execute(
-                update(ConversationObservation)
-                .where(ConversationObservation.id == graph["observation"].id)
-                .values(external_current_node_id=graph["parent_a"].external_node_id)
-            )
-            schema_session.flush()
+    with pytest.raises(IntegrityError), schema_session.begin_nested():
+        schema_session.execute(
+            update(ConversationObservation)
+            .where(ConversationObservation.id == graph["observation"].id)
+            .values(external_current_node_id=graph["parent_a"].external_node_id)
+        )
+        schema_session.flush()
 
 
 def test_message_presence_binding_is_database_enforced(schema_session):
@@ -445,10 +438,9 @@ def test_message_presence_binding_is_database_enforced(schema_session):
         message_id=None,
         message_revision_id=None,
     )
-    with pytest.raises(IntegrityError):
-        with schema_session.begin_nested():
-            schema_session.add(invalid_object)
-            schema_session.flush()
+    with pytest.raises(IntegrityError), schema_session.begin_nested():
+        schema_session.add(invalid_object)
+        schema_session.flush()
 
 
 def test_0016_downgrade_fails_closed_when_evidence_exists(real_export_database):

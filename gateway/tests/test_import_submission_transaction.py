@@ -1,19 +1,17 @@
 """Crash-consistency tests for HTTP import submission."""
 
-import uuid
 import hashlib
+import uuid
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
-
+import app.importers.staging as staging_module
 from app.config import get_settings
 from app.db import engine, get_db
 from app.main import app
 from app.models import ArchiveObject, ArchiveObservation, ImportJob, SourceAccount
-import app.importers.staging as staging_module
-
+from fastapi.testclient import TestClient
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
 
 HEADERS = {"Authorization": "Bearer qingyu-test-token-only"}
 

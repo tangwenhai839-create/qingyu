@@ -6,14 +6,13 @@ returned here is below ``<archive root>/staging``.
 
 from __future__ import annotations
 
+import os
+import stat
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
-import os
 from pathlib import Path
-import stat
-from typing import BinaryIO, Literal
-import uuid
-
+from typing import BinaryIO, Literal, Self
 
 PreJobNamespace = Literal["uploads", "archive-prepared"]
 NAMESPACES = ("uploads", "archive-prepared", "jobs", "quarantine")
@@ -205,13 +204,13 @@ class PreJobGeneration:
         if remove and self.directory.exists():
             try:
                 return safe_remove_staging(self.directory, self.directory.parents[2])
-            except Exception:
+            except Exception:  # noqa: BLE001
                 # Cleanup is best-effort after the lifecycle owner has already
                 # completed or failed. The periodic scanner will retry it.
                 return SafeRemoveResult("failed", self.directory)
         return None
 
-    def __enter__(self) -> "PreJobGeneration":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, _type, _value, _traceback) -> None:

@@ -8,8 +8,8 @@ bytes, uses the operator API credential.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -19,8 +19,12 @@ from .auth import require_evidence_read_token, require_token
 from .config import get_settings
 from .db import get_db
 from .export.bundle import FORMAT
-from .export.service import ConversationNotFound, ExportBundle, ExportIntegrityError, ExportService
-
+from .export.service import (
+    ConversationNotFound,
+    ExportBundle,
+    ExportIntegrityError,
+    ExportService,
+)
 
 logger = logging.getLogger(__name__)
 _CHUNK = 1024 * 1024

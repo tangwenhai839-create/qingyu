@@ -1,26 +1,34 @@
 import hashlib
 import json
 import os
+import subprocess
+import sys
 import threading
 import time
 import uuid
 import zipfile
-import subprocess
-import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import delete
-from sqlalchemy.orm import Session
+import app.importers.cleanup as cleanup_module
+import app.importers.processor as processor_module
 import pytest
-
 from app.db import engine
 from app.importers.cleanup import cleanup_failed_staging
 from app.importers.worker import ImportWorker
 from app.importers.worker_runtime import WorkerRuntime
-from app.models import ArchiveObject, Attachment, Conversation, ImportJob, Message, MessageObservation, MessageRevision, SourceAccount
-import app.importers.processor as processor_module
-import app.importers.cleanup as cleanup_module
+from app.models import (
+    ArchiveObject,
+    Attachment,
+    Conversation,
+    ImportJob,
+    Message,
+    MessageObservation,
+    MessageRevision,
+    SourceAccount,
+)
+from sqlalchemy import delete
+from sqlalchemy.orm import Session
 
 
 def _clear(db):
@@ -54,8 +62,8 @@ def test_pending_running_and_expired_running_attempts_are_protected(tmp_path):
     with Session(engine,expire_on_commit=False) as db:
         _clear(db)
         pending,pending_token=_job(db,'pending')
-        running,running_token=_job(db,'running',datetime.now(timezone.utc)+timedelta(minutes=5))
-        expired,expired_token=_job(db,'running',datetime.now(timezone.utc)-timedelta(minutes=5))
+        running,running_token=_job(db,'running',datetime.now(UTC)+timedelta(minutes=5))
+        expired,expired_token=_job(db,'running',datetime.now(UTC)-timedelta(minutes=5))
         paths={
             _attempt(tmp_path,pending.id,pending_token),
             _attempt(tmp_path,running.id,running_token),
@@ -97,7 +105,7 @@ def test_terminal_orphan_recent_and_unknown_paths_are_classified(tmp_path):
 def test_terminal_jobs_with_valid_ownership_are_protected_before_status(tmp_path):
     with Session(engine,expire_on_commit=False) as db:
         _clear(db)
-        future=datetime.now(timezone.utc)+timedelta(minutes=5)
+        future=datetime.now(UTC)+timedelta(minutes=5)
         failed,failed_token=_job(db,'failed',future,retain_lease=True)
         completed,completed_token=_job(db,'completed',future,retain_lease=True)
         failed_path=_attempt(tmp_path,failed.id,failed_token)
@@ -111,7 +119,7 @@ def test_terminal_jobs_with_valid_ownership_are_protected_before_status(tmp_path
 def test_terminal_jobs_with_expired_or_absent_ownership_are_deleted(tmp_path):
     with Session(engine,expire_on_commit=False) as db:
         _clear(db)
-        expired,expired_token=_job(db,'failed',datetime.now(timezone.utc)-timedelta(minutes=5),retain_lease=True)
+        expired,expired_token=_job(db,'failed',datetime.now(UTC)-timedelta(minutes=5),retain_lease=True)
         no_lease,no_lease_token=_job(db,'completed')
         paths={_attempt(tmp_path,expired.id,expired_token),_attempt(tmp_path,no_lease.id,no_lease_token)}
         result=cleanup_failed_staging(tmp_path,db,7)
@@ -122,7 +130,7 @@ def test_terminal_jobs_with_expired_or_absent_ownership_are_deleted(tmp_path):
 def test_terminal_job_with_live_but_mismatched_ownership_fails_closed(tmp_path):
     with Session(engine,expire_on_commit=False) as db:
         _clear(db)
-        job,token_a=_job(db,'failed',datetime.now(timezone.utc)+timedelta(minutes=5),retain_lease=True)
+        job,token_a=_job(db,'failed',datetime.now(UTC)+timedelta(minutes=5),retain_lease=True)
         token_b=uuid.uuid4(); mismatched=_attempt(tmp_path,job.id,token_b)
         wrong_attempt=_attempt(tmp_path,job.id,token_a,attempt=2)
         result=cleanup_failed_staging(tmp_path,db,7)
@@ -152,7 +160,7 @@ def test_directory_symlink_cannot_alias_and_delete_active_attempt(tmp_path):
     with Session(engine,expire_on_commit=False) as db:
         _clear(db)
         completed,completed_token=_job(db,'completed')
-        running,running_token=_job(db,'running',datetime.now(timezone.utc)+timedelta(minutes=5))
+        running,running_token=_job(db,'running',datetime.now(UTC)+timedelta(minutes=5))
         unsafe=_attempt(tmp_path,completed.id,completed_token)
         target=_attempt(tmp_path,running.id,running_token)
         link=unsafe/'active-alias'; _symlink_directory(link,target)
@@ -173,7 +181,7 @@ def test_candidate_replaced_by_junction_at_quarantine_boundary_is_not_followed(t
         if not injected and Path(source)==candidate:
             injected=True
             original_replace(source,backup)
-            created=subprocess.run(['cmd','/c','mklink','/J',str(candidate),str(target)],capture_output=True,text=True)
+            created=subprocess.run(['cmd','/c','mklink','/J',str(candidate),str(target)],capture_output=True,text=True,check=False)
             if created.returncode: pytest.skip('Windows junction creation unavailable')
         return original_replace(source,destination)
     monkeypatch.setattr(cleanup_module.os,'replace',replace_with_race)
@@ -235,7 +243,7 @@ def test_windows_junction_is_detected_without_following(tmp_path):
     with Session(engine,expire_on_commit=False) as db:
         _clear(db); completed,token=_job(db,'completed'); unsafe=_attempt(root,completed.id,token)
         junction=unsafe/'junction'
-        created=subprocess.run(['cmd','/c','mklink','/J',str(junction),str(target)],capture_output=True,text=True)
+        created=subprocess.run(['cmd','/c','mklink','/J',str(junction),str(target)],capture_output=True,text=True,check=False)
         if created.returncode:
             pytest.skip('Windows junction creation unavailable')
         try:
@@ -274,7 +282,7 @@ def test_real_windows_file_lock_failure_does_not_stop_cleanup(tmp_path):
 
 def test_expired_attempt_survives_cleanup_recovery_and_retry_claim(tmp_path):
     with Session(engine,expire_on_commit=False) as db:
-        _clear(db); job,token_a=_job(db,'running',datetime.now(timezone.utc)-timedelta(minutes=1)); old_path=_attempt(tmp_path,job.id,token_a)
+        _clear(db); job,token_a=_job(db,'running',datetime.now(UTC)-timedelta(minutes=1)); old_path=_attempt(tmp_path,job.id,token_a)
         assert cleanup_failed_staging(tmp_path,db,7).skipped_active==[old_path]
         assert ImportWorker(db).recover_stale()==1
         claim=ImportWorker(db).claim_next(60); assert claim.job_id==job.id and claim.lease_token!=token_a

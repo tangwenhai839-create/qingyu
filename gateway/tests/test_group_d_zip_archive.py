@@ -1,14 +1,24 @@
-import stat, uuid, zipfile
+import stat
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from sqlalchemy import delete
-from sqlalchemy.orm import Session
-
 from app.archive.service import ArchiveService
 from app.db import engine
 from app.importers.zip_staging import UnsafeZipError, safe_extract
-from app.models import ArchiveObject, ArchiveObservation, Attachment, Conversation, ImportJob, Message, MessageObservation, MessageRevision, SourceAccount
+from app.models import (
+    ArchiveObject,
+    ArchiveObservation,
+    Attachment,
+    Conversation,
+    ImportJob,
+    Message,
+    MessageObservation,
+    MessageRevision,
+    SourceAccount,
+)
+from sqlalchemy import delete
+from sqlalchemy.orm import Session
 
 
 def _clear(db):

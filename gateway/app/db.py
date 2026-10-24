@@ -1,7 +1,10 @@
 from collections.abc import Generator
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
 from .database_config import configured_database_url
+
 
 class Base(DeclarativeBase):
     pass

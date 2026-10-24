@@ -7,14 +7,13 @@ API puts it in ``X-Qingyu-Manifest-SHA256``).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import io
 import json
-from pathlib import Path
 import stat
 import zipfile
-
+from dataclasses import dataclass
+from pathlib import Path
 
 FORMAT = "qingyu-export-bundle-v1"
 MANIFEST_NAME = "manifest.json"

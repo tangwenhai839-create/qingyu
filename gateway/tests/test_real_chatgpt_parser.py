@@ -1,21 +1,26 @@
+# RUF015 wants next(iter(...)) for a first element. That raises StopIteration
+# instead of IndexError, so these assertions keep the index.
+# ruff: noqa: RUF015
 import copy
 import hashlib
 import json
 import os
+import zipfile
 from collections import Counter
 from pathlib import Path
-import zipfile
 
 import pytest
-
-from app.importers.generic import GenericTreeParser, ParserRegistry, ParserValidationError
+from app.importers.generic import (
+    GenericTreeParser,
+    ParserRegistry,
+    ParserValidationError,
+)
 from app.importers.real_chatgpt import ChatGPTExportParser, normalize_timestamp
 from app.importers.revision import (
     compute_canonical_fragment_fingerprint,
     compute_semantic_revision_fingerprint,
     compute_source_observation_fingerprint,
 )
-
 
 SAMPLE_SHA256 = "04c54e6f87bd2113c5183ba7a2f24b2694c333e5eab6f42308f654063ee4b040"
 

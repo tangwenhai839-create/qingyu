@@ -4,7 +4,6 @@ import zipfile
 from pathlib import Path
 
 import pytest
-
 from app.export.bundle import (
     FORMAT,
     MANIFEST_NAME,

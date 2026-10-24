@@ -8,19 +8,18 @@ import os
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import pytest
-from sqlalchemy import delete, func, select
-from sqlalchemy.orm import Session
-
 import app.importers.cleanup as cleanup_module
+import pytest
 from app.db import engine
 from app.importers.cleanup import cleanup_staging
 from app.importers.staging import ensure_staging_layout, job_attempt_path
 from app.importers.worker import ImportWorker
 from app.models import ArchiveObject, ImportJob, SourceAccount
+from sqlalchemy import delete, func, select
+from sqlalchemy.orm import Session
 
 
 def _age(path: Path, days: int = 10) -> None:
@@ -55,7 +54,7 @@ def concurrency_job():
             parser_version="0.1",
             status="failed",
             attempt_count=1,
-            created_at=datetime(2000, 1, 1, tzinfo=timezone.utc),
+            created_at=datetime(2000, 1, 1, tzinfo=UTC),
             report_json={},
         )
         db.add(job)
@@ -111,7 +110,7 @@ def test_cleanup_vs_retry_cannot_delete_new_active_attempt(
         try:
             with Session(engine) as db:
                 results["cleanup"] = cleanup_staging(tmp_path, db, retention_days=7)
-        except BaseException as exc:  # surfaced in the parent test thread
+        except BaseException as exc:  # noqa: BLE001  # surfaced in the parent test thread
             errors.append(exc)
 
     def retry_and_claim():
@@ -132,7 +131,7 @@ def test_cleanup_vs_retry_cannot_delete_new_active_attempt(
                 )
                 (active / "payload").write_bytes(b"new-active-attempt")
                 results["active"] = active.resolve()
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001
             errors.append(exc)
 
     threads = [threading.Thread(target=cleanup_once), threading.Thread(target=retry_and_claim)]
@@ -158,7 +157,7 @@ def test_cleanup_vs_stale_recovery_and_reclaim_preserves_new_owner(
 ):
     job_id, _, _ = concurrency_job
     stale_token = uuid.uuid4()
-    stale_expiry = datetime.now(timezone.utc) - timedelta(minutes=1)
+    stale_expiry = datetime.now(UTC) - timedelta(minutes=1)
     with Session(engine) as db:
         job = db.get(ImportJob, job_id)
         job.status = "running"
@@ -188,7 +187,7 @@ def test_cleanup_vs_stale_recovery_and_reclaim_preserves_new_owner(
         try:
             with Session(engine) as db:
                 results["cleanup"] = cleanup_staging(tmp_path, db, retention_days=7)
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001
             errors.append(exc)
 
     def recover_and_reclaim():
@@ -209,7 +208,7 @@ def test_cleanup_vs_stale_recovery_and_reclaim_preserves_new_owner(
                 )
                 (active / "payload").write_bytes(b"reclaimed-attempt")
                 results["active"] = active.resolve()
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001
             errors.append(exc)
 
     threads = [threading.Thread(target=cleanup_once), threading.Thread(target=recover_and_reclaim)]
@@ -254,7 +253,7 @@ def test_two_scanners_racing_quarantine_recovery_have_one_logical_owner(
             with Session(engine) as db:
                 assert db.scalar(select(func.current_database())) == "qingyu_test"
                 results.append(cleanup_staging(tmp_path, db, retention_days=7))
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001
             errors.append(exc)
 
     threads = [threading.Thread(target=recover_once), threading.Thread(target=recover_once)]

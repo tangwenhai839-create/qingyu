@@ -1,14 +1,25 @@
-import hashlib, json, uuid, zipfile
-from datetime import datetime, timedelta, timezone
+import hashlib
+import json
+import uuid
+import zipfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-
-from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
 
 from app.db import engine
 from app.importers.worker import ImportWorker
 from app.importers.worker_runtime import WorkerRuntime
-from app.models import ArchiveObject, Attachment, Conversation, ImportJob, Message, MessageObservation, MessageRevision, SourceAccount
+from app.models import (
+    ArchiveObject,
+    Attachment,
+    Conversation,
+    ImportJob,
+    Message,
+    MessageObservation,
+    MessageRevision,
+    SourceAccount,
+)
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
 
 
 def _clear(db):
@@ -19,7 +30,7 @@ def _clear(db):
 def test_stale_recovery_cannot_overwrite_new_claim():
     with Session(engine) as db:
         _clear(db); account=SourceAccount(platform='race',account_label='a',metadata_json={}); archive=ArchiveObject(sha256='1'*64,size_bytes=1,relative_path='x',media_type='x',integrity_status='verified',metadata_json={}); db.add_all([account,archive]); db.flush()
-        token_a=uuid.uuid4(); expiry=datetime.now(timezone.utc)-timedelta(seconds=1); job=ImportJob(source_account_id=account.id,archive_object_id=archive.id,parser_name='x',parser_version='1',status='running',lease_token=token_a,lease_expires_at=expiry,attempt_count=1,max_attempts=3,report_json={}); db.add(job); db.commit(); observed=(job.id,token_a,expiry,1,3)
+        token_a=uuid.uuid4(); expiry=datetime.now(UTC)-timedelta(seconds=1); job=ImportJob(source_account_id=account.id,archive_object_id=archive.id,parser_name='x',parser_version='1',status='running',lease_token=token_a,lease_expires_at=expiry,attempt_count=1,max_attempts=3,report_json={}); db.add(job); db.commit(); observed=(job.id,token_a,expiry,1,3)
         assert ImportWorker(db).recover_stale()==1; claimed=ImportWorker(db).claim_next(60); token_b=claimed.lease_token
         assert ImportWorker(db).recover_observed(*observed) is False
         current=db.get(ImportJob,claimed.id); assert current.status=='running' and current.lease_token==token_b

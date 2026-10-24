@@ -2,11 +2,10 @@ import logging
 from types import SimpleNamespace
 
 import pytest
-from pydantic import ValidationError
-
 from app.config import Settings
 from app.importers import worker_runtime
 from app.importers.worker_runtime import WorkerRuntime
+from pydantic import ValidationError
 
 
 class _Session:
@@ -29,7 +28,6 @@ class _IdleWorker:
 
     def claim_next(self, lease_duration):
         self.db.events.append("claim")
-        return None
 
 
 def _result():

@@ -1,7 +1,8 @@
-from functools import lru_cache
 import secrets
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from functools import lru_cache
+
 from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _FORBIDDEN_SECRETS = {"", "changeme", "example", "change-this-local-token", "change-me"}
 

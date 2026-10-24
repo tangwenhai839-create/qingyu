@@ -1,5 +1,17 @@
 from sqlalchemy import func, select
-from ..models import Attachment, AttachmentObservation, ConversationNode, ConversationObservation, ImportBatchCommit, ImportJob, MappingNodeObservation, Message, MessageObservation, MessageRevision
+
+from ..models import (
+    Attachment,
+    AttachmentObservation,
+    ConversationNode,
+    ConversationObservation,
+    ImportBatchCommit,
+    ImportJob,
+    MappingNodeObservation,
+    Message,
+    MessageObservation,
+    MessageRevision,
+)
 
 
 class ImportedTreeQuery:

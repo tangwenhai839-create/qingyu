@@ -3,7 +3,6 @@ import uuid
 from pathlib import Path
 
 import pytest
-
 from app.models import Attachment, AttachmentObservation
 
 

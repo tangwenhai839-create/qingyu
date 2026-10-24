@@ -1,7 +1,10 @@
 """add complete message revision fingerprint"""
-import hashlib, json
-from alembic import op
+import hashlib
+import json
+
 import sqlalchemy as sa
+from alembic import op
+
 revision='0009_revision_fingerprint'; down_revision='0008_import_result_codes'; branch_labels=None; depends_on=None
 
 def _fp(row):

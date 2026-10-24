@@ -2,7 +2,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from app.importers.attachments import prepare_attachment_work
 from app.importers.generic import ParsedAttachment, ParsedConversation, ParsedMessage
 

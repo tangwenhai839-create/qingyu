@@ -23,7 +23,7 @@ import subprocess
 import sys
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from alembic.script import ScriptDirectory
@@ -571,7 +571,7 @@ def backup(database_url: str, expect_database: str, archive_root: Path, dest: Pa
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def load_inventory(source: Path) -> dict:
@@ -800,7 +800,7 @@ def main(argv: list[str] | None = None) -> int:
     except MaintenanceError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"error: {exc.__class__.__name__}", file=sys.stderr)
         return 1
     return 0

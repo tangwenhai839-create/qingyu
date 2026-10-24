@@ -1,0 +1,16 @@
+# Adopted for gateway/. Core and contracts stay on the syntax-only CI check
+# until they are cleaned; see issue #8. The gate is `ruff check gateway`.
+target-version = "py312"
+
+[lint.flake8-bugbear]
+# FastAPI evaluates these in defaults on purpose. They are not mutable state.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Query",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Security",
+    "fastapi.security.HTTPBearer",
+]

@@ -1,8 +1,7 @@
-from collections import defaultdict
 
 class TreeValidator:
     def validate(self, nodes):
-        ids = [n.node_id for n in nodes]; seen=set(); anomalies=[]; mapping={n.node_id:n for n in nodes}
+        seen=set(); anomalies=[]; mapping={n.node_id:n for n in nodes}
         for n in nodes:
             if n.node_id in seen: anomalies.append({"type":"duplicate_node","node_id":n.node_id})
             seen.add(n.node_id)

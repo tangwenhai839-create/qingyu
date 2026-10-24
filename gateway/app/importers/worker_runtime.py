@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..database_config import DatabaseConfigurationError
 from ..errors import safe_log_exception
+
 try:
     from .processor import ImportProcessor
     from .worker import ClaimedJob, ImportWorker, LeaseLost
@@ -96,11 +97,11 @@ class WorkerRuntime:
                 )
             elif result.counts["deleted"] or result.counts.get("quarantine_recovered", 0):
                 logger.info("staging cleanup completed", extra={"cleanup_counts": result.counts})
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             if cleanup_db is not None:
                 try:
                     cleanup_db.rollback()
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
             safe_log_exception(
                 logger,
@@ -114,7 +115,7 @@ class WorkerRuntime:
             if cleanup_db is not None:
                 try:
                     cleanup_db.close()
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
 
     def run_once(self) -> bool:
@@ -141,7 +142,7 @@ class WorkerRuntime:
                     with self.session_factory() as heartbeat_db:
                         try:
                             alive = ImportWorker(heartbeat_db).heartbeat(claim.job_id, claim.lease_token, self.lease_duration)
-                        except Exception as exc:
+                        except Exception as exc:  # noqa: BLE001
                             heartbeat_db.rollback()
                             attempt_health.mark_failed()
                             safe_log_exception(
@@ -170,7 +171,7 @@ class WorkerRuntime:
                 logger.info("import worker lost ownership", extra={"job_id": str(claim.job_id)})
             except SQLAlchemyError:
                 raise
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 safe_log_exception(
                     logger,
                     logging.ERROR,

@@ -1,14 +1,13 @@
 import logging
 
 import pytest
+from app.config import Settings
+from app.db import engine
+from app.errors import safe_database_error, safe_log_exception
+from app.main import app
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-
-from app.config import Settings
-from app.db import engine
-from app.main import app
-from app.errors import safe_database_error, safe_log_exception
 
 
 @pytest.mark.parametrize('token',['','changeme','example','change-this-local-token'])
@@ -20,8 +19,8 @@ def test_non_test_runtime_rejects_public_or_empty_tokens(token):
 def test_sqlalchemy_hides_secret_parameters():
     marker='SUPER_SECRET_CHAT_CONTENT_123'
     assert engine.hide_parameters is True
-    with engine.connect() as connection:
-        with pytest.raises(Exception) as caught: connection.execute(text('select cast(:value as integer)'),{'value':marker})
+    with engine.connect() as connection, pytest.raises(Exception) as caught:
+        connection.execute(text('select cast(:value as integer)'),{'value':marker})
     assert marker not in safe_database_error(caught.value)
 
 

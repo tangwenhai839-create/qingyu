@@ -1,7 +1,8 @@
 import hashlib
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any, Iterator
+from typing import Any, ClassVar
 
 
 class ParserValidationError(ValueError):
@@ -81,16 +82,16 @@ class GenericTreeParser:
     name = "generic-tree-fixture"
     version = "0.1"
     marker = "qingyu-fixture-v1"
-    top_fields = {"schema_marker", "conversations"}
-    conversation_fields = {"id", "title", "current_node", "mapping", "metadata"}
-    node_fields = {"id", "parent", "children", "message", "metadata"}
-    message_fields = {
+    top_fields: ClassVar[set[str]] = {"schema_marker", "conversations"}
+    conversation_fields: ClassVar[set[str]] = {"id", "title", "current_node", "mapping", "metadata"}
+    node_fields: ClassVar[set[str]] = {"id", "parent", "children", "message", "metadata"}
+    message_fields: ClassVar[set[str]] = {
         "id", "author", "content", "metadata", "model", "create_time",
         "update_time", "attachments",
     }
-    author_fields = {"role", "name", "metadata"}
-    content_fields = {"content_type", "parts", "text", "metadata"}
-    attachment_fields = {
+    author_fields: ClassVar[set[str]] = {"role", "name", "metadata"}
+    content_fields: ClassVar[set[str]] = {"content_type", "parts", "text", "metadata"}
+    attachment_fields: ClassVar[set[str]] = {
         "id", "reference", "member_path", "filename", "media_type",
         "size_bytes", "metadata",
     }

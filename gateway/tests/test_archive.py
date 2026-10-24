@@ -1,12 +1,21 @@
 import hashlib
 import os
 from pathlib import Path
+
 import pytest
+from app.archive.service import ArchiveService
+from app.models import (
+    ArchiveObject,
+    ArchiveObservation,
+    Conversation,
+    ImportJob,
+    Message,
+    MessageObservation,
+    MessageRevision,
+    SourceAccount,
+)
 from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import Session
-from app.models import ArchiveObject, ArchiveObservation, ImportJob, MessageObservation, MessageRevision, Message, Conversation, SourceAccount
-from app.db import Base
-from app.archive.service import ArchiveService
 
 DB_URL = os.environ["TEST_DATABASE_URL"]
 

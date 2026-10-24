@@ -6,22 +6,17 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, delete
-from sqlalchemy.orm import Session
-
 from app import api_import
 from app.importers import processor as processor_module
 from app.importers.generic import GenericTreeParser, ParserRegistry
 from app.importers.processor import ImportProcessor
 from app.importers.report import empty_report
-from app.importers.service import ImportService
 from app.importers.retry_policy import (
     PARSER_CONTRACT_CONFLICT,
     PARSER_CONTRACT_UNAVAILABLE,
     resolve_durable_parser_contract,
 )
+from app.importers.service import ImportService
 from app.importers.worker import ImportWorker
 from app.main import app
 from app.models import (
@@ -37,7 +32,10 @@ from app.models import (
     MessageRevision,
     SourceAccount,
 )
-
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, delete
+from sqlalchemy.orm import Session
 
 DB_URL = __import__("os").environ["TEST_DATABASE_URL"]
 HEADERS = {"Authorization": "Bearer qingyu-test-token-only"}

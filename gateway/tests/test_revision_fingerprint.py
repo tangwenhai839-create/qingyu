@@ -1,7 +1,8 @@
 from app.importers.revision import compute_revision_fingerprint
 
+
 def base(**kw):
-    x=dict(role='user',content_text='hello',content_json={'a':1,'b':2},model='m',raw_timestamp='1'); x.update(kw); return compute_revision_fingerprint(**x)
+    x={'role':'user','content_text':'hello','content_json':{'a':1,'b':2},'model':'m','raw_timestamp':'1'}; x.update(kw); return compute_revision_fingerprint(**x)
 def test_role_and_json_semantics_change_fingerprint():
     assert base() != base(role='assistant')
     assert base() != base(content_json={'content_type':'multimodal_text'})

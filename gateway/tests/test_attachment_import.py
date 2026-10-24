@@ -2,13 +2,10 @@ import hashlib
 import json
 import uuid
 import zipfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import delete, select, update
-from sqlalchemy.orm import Session
-
 from app.archive.service import ArchiveService
 from app.db import engine
 from app.importers.processor import ImportProcessor
@@ -26,6 +23,8 @@ from app.models import (
     MessageRevision,
     SourceAccount,
 )
+from sqlalchemy import delete, select, update
+from sqlalchemy.orm import Session
 
 
 def _clear(db):
@@ -331,7 +330,7 @@ def test_stale_recovery_uses_committed_retry_attempt_attachment_truth(clean_db, 
         with Session(engine) as lifecycle:
             lifecycle.execute(
                 update(ImportJob).where(ImportJob.id == job_id).values(
-                    lease_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1)
+                    lease_expires_at=datetime.now(UTC) - timedelta(seconds=1)
                 )
             )
             lifecycle.commit()
@@ -365,7 +364,7 @@ def test_attachment_reimport_same_attempt_is_idempotent(clean_db, tmp_path):
     db.execute(update(ImportJob).where(ImportJob.id == claim.id).values(
         status="running",
         lease_token=claim.lease_token,
-        lease_expires_at=datetime.now(timezone.utc) + timedelta(seconds=60),
+        lease_expires_at=datetime.now(UTC) + timedelta(seconds=60),
     ))
     db.commit()
     archived_id = db.query(AttachmentObservation).one().archive_object_id
@@ -428,7 +427,7 @@ def test_stale_attachment_worker_leaves_only_orphan_bytes_then_new_worker_reuses
         with Session(engine) as thief:
             thief.execute(update(ImportJob).where(ImportJob.id == claim_a.id).values(
                 lease_token=uuid.uuid4(),
-                lease_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+                lease_expires_at=datetime.now(UTC) - timedelta(seconds=1),
             ))
             thief.commit()
         return prepared

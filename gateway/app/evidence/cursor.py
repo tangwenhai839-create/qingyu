@@ -4,7 +4,6 @@ import hmac
 import json
 from typing import Any
 
-
 CURSOR_VERSION = 1
 
 

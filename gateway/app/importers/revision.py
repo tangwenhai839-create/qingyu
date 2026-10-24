@@ -1,4 +1,5 @@
-import hashlib, json
+import hashlib
+import json
 from typing import Any
 
 from .generic import ParsedAttachment, canonical_attachment_descriptor

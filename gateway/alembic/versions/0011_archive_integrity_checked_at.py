@@ -3,8 +3,8 @@
 Revision ID: 0011_integrity_checked_at
 Revises: 0010_archive_integrity_error
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "0011_integrity_checked_at"
 down_revision = "0010_archive_integrity_error"
