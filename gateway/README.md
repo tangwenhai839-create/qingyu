@@ -58,6 +58,8 @@ From this directory, `python -m scripts.maintenance` takes a logical backup, res
 
 Deployment of this process, the import worker, PostgreSQL, and the archive directory is described in [../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).
 
+The import pipeline and parser contract are specified in [../docs/IMPORTER_SPEC.md](../docs/IMPORTER_SPEC.md).
+
 ## Running tests
 
 Gateway tests require a dedicated test database named `qingyu_test` with migrations applied to the latest revision. If the database isn't migrated, the tests stop early and tell you to run `alembic upgrade head` against it.
