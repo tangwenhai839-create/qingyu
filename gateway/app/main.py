@@ -8,7 +8,11 @@ from .errors import safe_database_error, safe_log_exception
 from .auth import require_token
 from .config import get_settings
 from .logging_config import configure_logging
-from .request_limits import ImportRequestSizeLimitMiddleware
+from .request_limits import (
+    FixedWindowRateLimiter,
+    ImportRequestSizeLimitMiddleware,
+    RateLimitMiddleware,
+)
 from .api_import import router as import_router
 from .api_archive import router as archive_router
 from .api_evidence import router as evidence_router
@@ -18,7 +22,13 @@ from .api_export import conversation_router as export_conversation_router
 settings = get_settings()
 configure_logging(settings.log_level)
 app = FastAPI(title=settings.app_name, version="0.1.0")
+rate_limiter = FixedWindowRateLimiter(
+    limit=settings.rate_limit_requests,
+    window_seconds=settings.rate_limit_window_seconds,
+)
+app.state.rate_limiter = rate_limiter
 app.add_middleware(ImportRequestSizeLimitMiddleware)
+app.add_middleware(RateLimitMiddleware, limiter=rate_limiter)
 app.include_router(archive_router)
 app.include_router(import_router)
 app.include_router(evidence_router)

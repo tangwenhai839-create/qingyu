@@ -79,6 +79,10 @@ os.environ["EVIDENCE_READ_API_TOKEN"] = os.getenv(
 os.environ["EVIDENCE_CURSOR_SIGNING_KEY"] = os.getenv(
     "TEST_EVIDENCE_CURSOR_SIGNING_KEY", "qingyu-test-server-only-cursor-signing-key"
 )
+# The suite issues more requests than the production default window allows.
+# Force the flag off even if the parent environment turned it on. Tests that
+# cover the limiter turn it back on for that test only.
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 
 
 @pytest.fixture(scope="session", autouse=True)
