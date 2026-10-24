@@ -187,7 +187,13 @@ def test_observation_cursor_is_bounded_high_water_and_tamper_evident(monkeypatch
             headers=READ_HEADERS,
             params={"cursor": cursor, "conversation_id": str(uuid.uuid4())},
         ).json() == {"detail": {"code": "evidence_cursor_invalid"}}
-        tampered = cursor[:-1] + ("A" if cursor[-1] != "A" else "B")
+        payload_part, signature_part = cursor.split(".", 1)
+        # A SHA-256 signature is 32 bytes, so the final base64 character has
+        # unused low bits. Replacing that character with A or B can decode to
+        # the same signature. Flip the first signature character instead.
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        replacement = alphabet[(alphabet.index(signature_part[0]) + 1) % len(alphabet)]
+        tampered = f"{payload_part}.{replacement}{signature_part[1:]}"
         assert client.get(
             "/api/v1/evidence/conversation-observations",
             headers=READ_HEADERS,
