@@ -83,6 +83,10 @@ os.environ["EVIDENCE_CURSOR_SIGNING_KEY"] = os.getenv(
 # Force the flag off even if the parent environment turned it on. Tests that
 # cover the limiter turn it back on for that test only.
 os.environ["RATE_LIMIT_ENABLED"] = "false"
+# An operator shell may export TRUSTED_PROXIES. The suite's default is the
+# production default: no proxy is trusted, so forwarded headers are ignored
+# unless a test opts in.
+os.environ["TRUSTED_PROXIES"] = ""
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -46,11 +46,12 @@ def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _arm_limiter(monkeypatch, *, requests: int, window: float, now: float):
+def _arm_limiter(monkeypatch, *, requests: int, window: float, now: float, trusted_proxies: str = ""):
     settings = get_settings()
     monkeypatch.setattr(settings, "rate_limit_enabled", True)
     monkeypatch.setattr(settings, "rate_limit_requests", requests)
     monkeypatch.setattr(settings, "rate_limit_window_seconds", window)
+    monkeypatch.setattr(settings, "trusted_proxies", trusted_proxies)
     limiter = app.state.rate_limiter
     previous = limiter.clock
     limiter.clock = lambda: now
@@ -144,6 +145,7 @@ def test_test_env_skips_token_list_checks_and_limits_have_defaults(monkeypatch):
     monkeypatch.delenv("RATE_LIMIT_REQUESTS", raising=False)
     monkeypatch.delenv("RATE_LIMIT_WINDOW_SECONDS", raising=False)
     monkeypatch.delenv("REQUEST_BODY_MAX_BYTES", raising=False)
+    monkeypatch.delenv("TRUSTED_PROXIES", raising=False)
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
     disabled = Settings(app_env="test", _env_file=None)
     assert disabled.rate_limit_enabled is False
@@ -157,6 +159,7 @@ def test_test_env_skips_token_list_checks_and_limits_have_defaults(monkeypatch):
     assert defaults.rate_limit_requests == 600
     assert defaults.rate_limit_window_seconds == 60
     assert defaults.request_body_max_bytes == 1024 * 1024
+    assert defaults.trusted_proxies == ""
 
     with pytest.raises(ValidationError):
         Settings(app_env="test", rate_limit_requests=0, _env_file=None)
