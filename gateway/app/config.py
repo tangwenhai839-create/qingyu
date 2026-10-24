@@ -1,7 +1,9 @@
 from functools import lru_cache
 import secrets
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
+
+from .client_ip import parse_trusted_proxies
 
 _FORBIDDEN_SECRETS = {"", "changeme", "example", "change-this-local-token", "change-me"}
 
@@ -57,7 +59,15 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_requests: int = Field(default=600, gt=0)
     rate_limit_window_seconds: float = Field(default=60.0, gt=0)
+    # Comma-separated CIDRs. Empty ignores X-Forwarded-For and X-Real-IP.
+    trusted_proxies: str = ""
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @field_validator("trusted_proxies")
+    @classmethod
+    def _valid_trusted_proxies(cls, value: str) -> str:
+        parse_trusted_proxies(value)
+        return value
 
     def active_api_tokens(self) -> tuple[str, ...]:
         """Primary API token plus every additional token. All are active."""

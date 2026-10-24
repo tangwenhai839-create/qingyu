@@ -14,13 +14,14 @@ Body limits:
 
 Rate limit:
 
-- Fixed window, default 600 requests per 60 seconds, one bucket per direct
-  client address. ``/health`` is exempt.
-- The bucket is in-process. It is not shared across processes and it does not
-  trust ``X-Forwarded-For``, which a client could spoof if the application
-  port were reachable directly. The key is the direct client address, not the
-  port. Expired windows are dropped once the map holds 4096 keys; live windows
-  are kept.
+- Fixed window, default 600 requests per 60 seconds, one bucket per client
+  address. ``/health`` is exempt.
+- The bucket is in-process. It is not shared across processes. The key is the
+  client address, not the port. Expired windows are dropped once the map holds
+  4096 keys; live windows are kept.
+- ``TRUSTED_PROXIES`` is empty by default, so ``X-Forwarded-For`` and
+  ``X-Real-IP`` are ignored and the key is the direct peer. A header is read
+  only when that peer belongs to ``TRUSTED_PROXIES``; see ``client_ip``.
 - Disable with ``RATE_LIMIT_ENABLED=false``. The test suite does that so
   request volume is not part of the suite's result.
 """
@@ -33,6 +34,7 @@ import time
 
 from fastapi.responses import JSONResponse
 
+from .client_ip import client_ip
 from .config import get_settings
 
 
@@ -164,9 +166,7 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)
             return
         self.limiter.reconfigure(settings.rate_limit_requests, settings.rate_limit_window_seconds)
-        client = scope.get("client")
-        host = client[0] if client else "unknown"
-        allowed, retry_after = self.limiter.check(host)
+        allowed, retry_after = self.limiter.check(client_ip(scope, settings.trusted_proxies))
         if allowed:
             await self.app(scope, receive, send)
             return
