@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..database_config import DatabaseConfigurationError
 from ..errors import safe_log_exception
+from ..logging_config import configure_logging
 try:
     from .processor import ImportProcessor
     from .worker import ClaimedJob, ImportWorker, LeaseLost
@@ -239,6 +240,7 @@ class WorkerRuntime:
 def main() -> int:
     try:
         settings = get_settings()
+        configure_logging(settings.log_level, settings.log_format)
         runtime = WorkerRuntime(
             archive_root=__import__('pathlib').Path(settings.archive_root),
             poll_interval=float(os.getenv("IMPORT_WORKER_POLL_SECONDS", "1")),

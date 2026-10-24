@@ -74,7 +74,7 @@ The Gateway test suite will not run against a database whose name is not `qingyu
 
 ## Reverse proxy and TLS
 
-The Gateway process speaks HTTP. It does not terminate TLS, and it does not read `X-Forwarded-For`. Put the proxy on the same machine and let it connect to `127.0.0.1:8000`. Do not publish port 8000 or port 5432 on a public address. The Compose file already limits PostgreSQL to `127.0.0.1`.
+The Gateway process speaks HTTP. It does not terminate TLS. Put the proxy on the same machine and let it connect to `127.0.0.1:8000`. Do not publish port 8000 or port 5432 on a public address. The Compose file already limits PostgreSQL to `127.0.0.1`.
 
 The repository does not contain a proxy configuration. The block below is an example of a config you would write yourself. The certificate and key are files you install. Nginx's default request body limit is 1 MiB, which is smaller than an import, so the example raises it.
 
@@ -88,13 +88,37 @@ server {
     location / {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }
 ```
 
 `POST /api/v1/import/chatgpt` and `POST /api/v1/archive/objects` are limited to `IMPORT_UPLOAD_MAX_BYTES` plus 1 MiB of multipart overhead. The default `IMPORT_UPLOAD_MAX_BYTES` is 536870912, so the middleware limit is 537919488 bytes. A body above that returns 413. Every other request body is limited to `REQUEST_BODY_MAX_BYTES` (default 1 MiB), and a repeated, negative, or non-integer `Content-Length` returns 400.
 
-The process also applies an in-process fixed-window rate limit (`RATE_LIMIT_REQUESTS` per `RATE_LIMIT_WINDOW_SECONDS`, default 600 per 60 seconds) keyed on the direct client address; `/health` is exempt. Because it does not read `X-Forwarded-For`, behind a local proxy every client shares the proxy's bucket. Size the limit for that, or enforce per-client limits in the proxy.
+The process also applies an in-process fixed-window rate limit (`RATE_LIMIT_REQUESTS` per `RATE_LIMIT_WINDOW_SECONDS`, default 600 per 60 seconds). `/health` is exempt. The window is per process and is not shared across processes. With `TRUSTED_PROXIES` empty, which is the default, the key is the direct TCP peer. `X-Forwarded-For` and `X-Real-IP` are ignored, so a client cannot choose a bucket by sending those headers, and every client behind one proxy shares that proxy's bucket.
+
+Set `TRUSTED_PROXIES` to the CIDRs of proxies you run when each client should have its own bucket. For the nginx example above the peer is the local proxy, so `TRUSTED_PROXIES=127.0.0.1/32,::1/128`. A bare IP is a single host (`/32` or `/128`). Entries must be the network address (`10.0.0.0/8`, not `10.1.2.3/8`). A blank entry or a value that is not a CIDR or IP prevents the process from starting.
+
+The header is read only when the direct peer belongs to that list. A spoofed header from any other peer is ignored and the key stays the peer address. When the peer is trusted:
+
+- `X-Forwarded-For` is the hop list, client first. The limiter walks from the right, skips addresses that are themselves in `TRUSTED_PROXIES`, and uses the rightmost hop that is not. Addresses further left are ignored, which is what stops a client from prepending a fake address. `$proxy_add_x_forwarded_for` appends the address that connected to nginx, so the real client is that rightmost untrusted hop.
+- If `X-Forwarded-For` is absent, `X-Real-IP` is used as that single client address.
+- A hop that is not an IP does not create a bucket. The key falls back to the direct peer. IPv4-mapped IPv6 (`::ffff:203.0.113.5`) is the same key as `203.0.113.5`.
+
+List only hops you operate. Trusting `0.0.0.0/0` or a network that clients can connect from lets those clients supply the header themselves. If several proxies sit in front of the process, list each of their CIDRs so the walk skips them and stops at the client. The bucket is still the address, not the port.
+
+## Logging and metrics
+
+`LOG_LEVEL` is the standard library level (`INFO` by default). An unknown level falls back to `INFO`. `LOG_FORMAT` is `text` or `json`. `text` is the default. `json` writes one JSON object per line with `timestamp`, `level`, `logger`, `message`, and `request_id`, plus any extra fields the record already carries. Anything other than those two formats stops the process at startup. The import worker reads the same two settings when it starts.
+
+Every HTTP response carries `X-Request-ID`. A single incoming value of 1–128 characters from `[A-Za-z0-9._-]` is echoed. A missing, repeated, or otherwise unusable value is replaced with a new id, so a client cannot put a line break or a space into the log. The same id is included on log records emitted while the request is handled, and on the `request_id` field of the JSON error bodies the API already returns.
+
+Access logs are one line per request from the logger `qingyu.access`: method, path, status, duration, request id, and the direct peer address. The path has no query string. Headers, bearer tokens, and request or response bodies are not written. `/health` is included.
+
+`GET /metrics` returns Prometheus text (`text/plain; version=0.0.4`). It is not in the OpenAPI schema and it responds 404 until `METRICS_ENABLED=true`. The series are `qingyu_http_requests_total` and `qingyu_http_request_duration_seconds` (a histogram), both labeled with the route template and the status code. Unmatched paths use the label `unmatched`, so a scan of random URLs does not create a series per path. The numbers belong to this process only; a second worker or a second uvicorn process has its own.
+
+`METRICS_TOKEN`, when non-empty, requires `Authorization: Bearer <METRICS_TOKEN>`. The operator API token is not accepted unless you set `METRICS_TOKEN` to that same value. A scraper credential therefore does not grant import or archive access. When `METRICS_TOKEN` is empty and metrics are enabled, anyone who can reach the port can read the counters. Leave the process on `127.0.0.1` or set a token. The token is not written to the access log or the metrics body.
 
 ## Backups
 
@@ -117,6 +141,8 @@ There is no evidence-delete API. A restore is a new copy. It does not edit the s
 - Non-test startup rejects missing, example, or identical secrets. Comparisons use `secrets.compare_digest`.
 - SQLAlchemy is created with `hide_parameters=True`. Database failures returned to clients use an error code and a request id.
 - Evidence and export HTTP responses set `Cache-Control: private, no-store`.
-- The request-limit middleware caps the two upload routes and every other request body, and rate-limits per direct client address.
+- Logs are text unless `LOG_FORMAT=json`. Responses echo `X-Request-ID`. Access logs omit the query string, headers, tokens, and bodies.
+- `GET /metrics` is disabled unless `METRICS_ENABLED=true`, and `METRICS_TOKEN` can require a bearer token that is separate from `API_TOKEN`.
+- The request-limit middleware caps the two upload routes and every other request body, and rate-limits per client address. `TRUSTED_PROXIES` decides whether that address is the direct peer or the client named by a trusted proxy.
 - Staging cleanup does not delete committed archive objects, manifests, or evidence rows.
 - The OpenAPI UI is served by the same process at `/docs`. It is reachable by anyone who can reach the port. Keeping the process on `127.0.0.1`, behind the proxy, is what limits that.
