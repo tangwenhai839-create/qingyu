@@ -34,6 +34,8 @@ docker compose up -d db
 
 > **Note**: For any `APP_ENV` other than `test`, Gateway requires three distinct, non-example secrets (`API_TOKEN`, `EVIDENCE_READ_API_TOKEN`, and `EVIDENCE_CURSOR_SIGNING_KEY`); see `gateway/app/config.py`.
 
+The import pipeline and parser contract are specified in [../docs/IMPORTER_SPEC.md](../docs/IMPORTER_SPEC.md).
+
 ## Running tests
 
 Gateway tests require a dedicated test database named `qingyu_test` with migrations applied to the latest revision. If the database isn't migrated, the tests stop early and tell you to run `alembic upgrade head` against it.
