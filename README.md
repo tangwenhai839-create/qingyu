@@ -121,6 +121,8 @@ curl http://127.0.0.1:8000/health
 curl -H "Authorization: Bearer $API_TOKEN" http://127.0.0.1:8000/api/v1/protected-ping
 ```
 
+Imports also need `python -m app.importers.worker_runtime` from `gateway/`. Host binding, TLS at a reverse proxy, volumes, secrets, and backups are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 Main endpoints: `POST /api/v1/import/chatgpt`, `GET /api/v1/import-jobs/{id}`, `POST /api/v1/archive/objects`, `GET /api/v1/evidence/...`, `GET /api/v1/export/conversations/{id}`, and `GET /api/v1/export/archive`. Open `http://127.0.0.1:8000/docs` for the OpenAPI UI. The export bundle format is described in [`gateway/docs/EXPORT_BUNDLE.md`](gateway/docs/EXPORT_BUNDLE.md).
 
 ### Running tests

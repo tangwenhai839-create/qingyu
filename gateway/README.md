@@ -56,6 +56,8 @@ Non-upload request bodies are limited to `REQUEST_BODY_MAX_BYTES` (default 1 MiB
 
 From this directory, `python -m scripts.maintenance` takes a logical backup, restores it into a new database, or applies forward-only Alembic upgrades. `staging/` is not part of a backup, and downgrade is not a supported operation. See [docs/BACKUP_RESTORE_AND_UPGRADE.md](docs/BACKUP_RESTORE_AND_UPGRADE.md). [docs/BACKUP_RESTORE_RUNBOOK.md](docs/BACKUP_RESTORE_RUNBOOK.md) is the separate Phase 3 sample-acceptance procedure.
 
+Deployment of this process, the import worker, PostgreSQL, and the archive directory is described in [../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).
+
 ## Running tests
 
 Gateway tests require a dedicated test database named `qingyu_test` with migrations applied to the latest revision. If the database isn't migrated, the tests stop early and tell you to run `alembic upgrade head` against it.
