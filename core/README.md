@@ -33,7 +33,7 @@ in `gateway/README.md` belong to `gateway/` and its venv instead.
 ```bash
 export CORE_DATABASE_URL="postgresql+psycopg://<core-owner>@127.0.0.1:5432/qingyu_core_test"
 python -m alembic upgrade head
-python -m pytest
+python -m pytest            # plain `pytest` works too: core/pyproject.toml puts core/ on sys.path
 python -m compileall -q app tests
 python -m pip check
 python -m alembic check

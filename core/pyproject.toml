@@ -26,6 +26,9 @@ dev = ["pytest>=8.3,<9"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+# bare `pytest` (unlike `python -m pytest`) does not put core/ on sys.path, so
+# `from app...` / `from tests...` imports in conftest.py failed at collection
+pythonpath = ["."]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
