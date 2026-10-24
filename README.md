@@ -5,6 +5,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
 ![Status: work in progress](https://img.shields.io/badge/status-work%20in%20progress-orange)
+[![CI](https://github.com/tangwenhai839-create/qingyu/actions/workflows/ci.yml/badge.svg)](https://github.com/tangwenhai839-create/qingyu/actions/workflows/ci.yml)
 
 [中文说明](README_zh.md)
 
@@ -150,7 +151,7 @@ Core was developed mainly on Windows. Running its full suite needs the setup des
 
 Consistent with the status above; nothing here is a promise of dates.
 
-0. Enable GitHub Actions CI: a ready workflow is in [`ci/github-actions-ci.yml`](ci/github-actions-ci.yml) (lint, contracts, Gateway on PostgreSQL 16, portable Core subset); it only needs to be moved to `.github/workflows/`.
+0. GitHub Actions CI is enabled in [`.github/workflows/ci.yml`](.github/workflows/ci.yml): lint, contracts, Gateway on PostgreSQL 16, and the portable Core subset.
 1. Make the full Core test suite runnable on Linux CI (Docker-based PostgreSQL fixtures, skip Windows-only tests cleanly).
 2. Close the Core R1 acceptance blockers and finish phase-b2 (activation, signer admission, backup, migration readiness).
 3. Production GENESIS and activation ceremony, with an independent witness.
