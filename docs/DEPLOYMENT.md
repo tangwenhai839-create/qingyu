@@ -1,6 +1,6 @@
 # Deploying the Gateway
 
-This guide is for the Gateway in `gateway/`: the FastAPI process, the import worker, and PostgreSQL 16. Core is a separate experiment and is not part of this deployment. The repository does not ship a Gateway container image, a Compose service for the application, or a TLS listener. Those are not described here as if they existed.
+This guide is for the Gateway in `gateway/`: the FastAPI process, the import worker, and PostgreSQL 16. Core is a separate experiment and is not part of this deployment. `gateway/Dockerfile` and the Compose `app` service are documented in `gateway/README.md`. This page describes the host-run process. The repository still has no TLS listener; terminate TLS at a reverse proxy.
 
 The project status in the root README still applies. This page only describes how to run the processes and defaults that are in the tree today.
 
@@ -14,7 +14,7 @@ Start PostgreSQL from `gateway/`:
 docker compose up -d db
 ```
 
-`gateway/docker-compose.yml` defines one service, `db`, using the `postgres:16` image. It creates database `qingyu` and user `qingyu`. `POSTGRES_PASSWORD` must be set or Compose refuses to start. The published port is `127.0.0.1:5432:5432`. The named volume `qingyu_postgres` is mounted at `/var/lib/postgresql/data` inside the container. Compose does not build or start the Gateway.
+`gateway/docker-compose.yml` defines `db` (the `postgres:16` image) and `app` (the Gateway image). `db` creates database `qingyu` and user `qingyu`. `POSTGRES_PASSWORD` must be set or Compose refuses to start. The published Postgres port is `127.0.0.1:5432:5432`. The named volume `qingyu_postgres` is mounted at `/var/lib/postgresql/data` inside the container. `docker compose up -d db` starts only PostgreSQL. `docker compose up -d --build` also builds and starts the Gateway; see `gateway/README.md`.
 
 Apply the schema from `gateway/`, with `DATABASE_URL` pointing at that database:
 
@@ -30,7 +30,7 @@ Start the API from `gateway/` so it reads `gateway/.env`:
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-`HOST` and `PORT` in `.env.example` are settings fields. No Gateway code reads them. The listen address is the `--host` and `--port` you pass to uvicorn. Keep that on `127.0.0.1` unless you have another way to stop the port being reachable from the network.
+`HOST` and `PORT` in `.env.example` are settings fields. The startup log prints them. uvicorn does not bind those values; the listen address is the `--host` and `--port` you pass on the command line. Keep that on `127.0.0.1` unless you have another way to stop the port being reachable from the network. The Compose `app` service binds `0.0.0.0:8000` inside the container and publishes `127.0.0.1:8000`.
 
 Imports do not finish inside the API process. A second process, started from the same directory and the same environment, claims jobs and deletes expired staging:
 
@@ -40,7 +40,7 @@ python -m app.importers.worker_runtime
 
 Its defaults are `IMPORT_WORKER_POLL_SECONDS=1`, `IMPORT_WORKER_HEARTBEAT_SECONDS=10`, and `IMPORT_WORKER_LEASE_SECONDS=30`. Staging retention uses `STAGING_FAILED_RETENTION_DAYS` (7), `STAGING_CLEANUP_INTERVAL_SECONDS` (300), and `STAGING_CLEANUP_MAX_CANDIDATES` (100). Settings are read when each process starts. Changing `.env` has no effect until that process is restarted.
 
-`GET /health` does not require a token. It is not an authorization boundary.
+`GET /health` does not require a token and does not check the database. `GET /health/ready` does not require a token; it returns 200 after `SELECT 1` and 503 when the database does not answer. Neither is an authorization boundary.
 
 ## Volumes
 
@@ -48,7 +48,7 @@ Two directories have to survive a restart.
 
 The PostgreSQL volume is `qingyu_postgres`. Losing it loses the database unless you have a dump.
 
-`ARCHIVE_ROOT` is a directory on the host. It is not a Compose volume. `.env.example` contains the placeholder `<repo>/data`; replace it with a real writable directory. The Gateway uses three trees under that directory:
+On a host-run process, `ARCHIVE_ROOT` is a directory on the host. `.env.example` contains the placeholder `<repo>/data`; replace it with a real writable directory. The Compose `app` service does not use that value. It sets `ARCHIVE_ROOT` to `/data` on the named volume `archive_data`. The Gateway uses three trees under that directory:
 
 - `archive/objects/` — content-addressed bytes
 - `manifests/` — manifest files for those objects
@@ -60,7 +60,7 @@ The PostgreSQL volume is `qingyu_postgres`. Losing it loses the database unless 
 
 `.env` is gitignored. Start from `gateway/.env.example`.
 
-`POSTGRES_PASSWORD` is the database password. `DATABASE_URL` must use the same password. Compose does not expand variables inside `DATABASE_URL`, so write the password in both places. If the password contains `@`, `:`, `/`, or `%`, percent-encode it in `DATABASE_URL`.
+`POSTGRES_PASSWORD` is the database password. For a host-run process, `DATABASE_URL` must use the same password. Compose does not expand variables inside the `DATABASE_URL` line in `.env`, so write the password in both places. If the password contains `@`, `:`, `/`, or `%`, percent-encode it in that host-run `DATABASE_URL`. The Compose `app` service does not read `DATABASE_URL` from `.env`. It builds `postgresql+psycopg://qingyu:<POSTGRES_PASSWORD>@db:5432/qingyu`, so a password used with that service must be URL-safe (letters, digits, hyphen, underscore).
 
 For any `APP_ENV` other than `test`, startup requires three different values that are not empty and not one of `changeme`, `example`, `change-this-local-token`, or `change-me`:
 
@@ -96,7 +96,7 @@ server {
 
 `POST /api/v1/import/chatgpt` and `POST /api/v1/archive/objects` are limited to `IMPORT_UPLOAD_MAX_BYTES` plus 1 MiB of multipart overhead. The default `IMPORT_UPLOAD_MAX_BYTES` is 536870912, so the middleware limit is 537919488 bytes. A body above that returns 413. Every other request body is limited to `REQUEST_BODY_MAX_BYTES` (default 1 MiB), and a repeated, negative, or non-integer `Content-Length` returns 400.
 
-The process also applies an in-process fixed-window rate limit (`RATE_LIMIT_REQUESTS` per `RATE_LIMIT_WINDOW_SECONDS`, default 600 per 60 seconds). `/health` is exempt. The window is per process and is not shared across processes. With `TRUSTED_PROXIES` empty, which is the default, the key is the direct TCP peer. `X-Forwarded-For` and `X-Real-IP` are ignored, so a client cannot choose a bucket by sending those headers, and every client behind one proxy shares that proxy's bucket.
+The process also applies an in-process fixed-window rate limit (`RATE_LIMIT_REQUESTS` per `RATE_LIMIT_WINDOW_SECONDS`, default 600 per 60 seconds). `/health` and `/health/ready` are exempt. The window is per process and is not shared across processes. With `TRUSTED_PROXIES` empty, which is the default, the key is the direct TCP peer. `X-Forwarded-For` and `X-Real-IP` are ignored, so a client cannot choose a bucket by sending those headers, and every client behind one proxy shares that proxy's bucket.
 
 Set `TRUSTED_PROXIES` to the CIDRs of proxies you run when each client should have its own bucket. For the nginx example above the peer is the local proxy, so `TRUSTED_PROXIES=127.0.0.1/32,::1/128`. A bare IP is a single host (`/32` or `/128`). Entries must be the network address (`10.0.0.0/8`, not `10.1.2.3/8`). A blank entry or a value that is not a CIDR or IP prevents the process from starting.
 
@@ -136,7 +136,7 @@ There is no evidence-delete API. A restore is a new copy. It does not edit the s
 
 ## Defaults the process already applies
 
-- Compose publishes PostgreSQL only on `127.0.0.1`.
+- Compose publishes PostgreSQL on `127.0.0.1:5432`. The `app` service, when started, publishes the Gateway on `127.0.0.1:8000`.
 - The documented uvicorn command listens on `127.0.0.1:8000`.
 - Non-test startup rejects missing, example, or identical secrets. Comparisons use `secrets.compare_digest`.
 - SQLAlchemy is created with `hide_parameters=True`. Database failures returned to clients use an error code and a request id.
