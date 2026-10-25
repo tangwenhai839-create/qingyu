@@ -3,16 +3,27 @@ from functools import lru_cache
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 from .client_ip import parse_trusted_proxies
 
 _FORBIDDEN_SECRETS = {"", "changeme", "example", "change-this-local-token", "change-me"}
+_ENV_EXAMPLE = "gateway/.env.example"
+
+
+def _see_example(message: str) -> str:
+    """Attach the example-file pointer without changing the rule itself."""
+    text = message.rstrip()
+    if not text.endswith((".", "!", "?")):
+        text = f"{text}."
+    return f"{text} See {_ENV_EXAMPLE}."
 
 
 def normalize_log_format(value: str) -> str:
     normalized = (value or "").strip().lower()
     if normalized not in {"json", "text"}:
-        raise ValueError("LOG_FORMAT must be json or text")
+        raise ValueError(_see_example("LOG_FORMAT must be json or text."))
     return normalized
 
 
@@ -43,7 +54,69 @@ def _reject_duplicates(tokens: tuple[str, ...], label: str) -> None:
     for index, token in enumerate(tokens):
         for other in tokens[index + 1 :]:
             if secrets.compare_digest(token, other):
-                raise ValueError(f"{label} contains a duplicate token")
+                raise ValueError(_see_example(f"{label} contains a duplicate token"))
+
+
+def _present(value: str) -> str:
+    return "yes" if value and value.strip() else "no"
+
+
+def _one_line(value: object) -> str:
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
+def _database_host(database_url: str) -> str:
+    """Host only. The raw URL is never returned, so a password cannot leak."""
+    try:
+        host = make_url(database_url).host
+    except (ArgumentError, ValueError):
+        return "(unparsable url)"
+    if not host:
+        return "(no host)"
+    return host
+
+
+def _database_missing(database_url: str | None) -> bool:
+    return database_url is None or not database_url.strip()
+
+
+def startup_config_report(settings: "Settings") -> str:
+    """One log line describing the effective configuration.
+
+    Secrets are never included, only whether each one is set. The database is
+    host only, with credentials stripped. Outside ``APP_ENV=test``, a missing
+    or unparsable ``DATABASE_URL`` raises ``RuntimeError`` pointing at
+    ``gateway/.env.example``.
+    """
+    if settings.app_env.lower() != "test":
+        if _database_missing(settings.database_url):
+            raise RuntimeError(
+                "DATABASE_URL is not set: copy gateway/.env.example to gateway/.env, "
+                "fill in POSTGRES_PASSWORD and DATABASE_URL (see the comments there), "
+                "then start again."
+            )
+        if _database_host(settings.database_url or "") == "(unparsable url)":
+            raise RuntimeError(
+                "database_url_invalid: DATABASE_URL could not be parsed. "
+                f"See {_ENV_EXAMPLE}."
+            )
+    if _database_missing(settings.database_url):
+        database = "NOT SET"
+    else:
+        database = f"set (host={_database_host(settings.database_url or '')})"
+    return (
+        f"effective configuration: app_env={_one_line(settings.app_env)} "
+        f"listen={_one_line(settings.host)}:{settings.port} "
+        f"log_level={_one_line(settings.log_level)} "
+        f"archive_root={_one_line(settings.archive_root)} "
+        f"database={database} "
+        f"secrets set: api_token={_present(settings.api_token)} "
+        f"api_tokens={_present(settings.api_tokens)} "
+        f"evidence_read_api_token={_present(settings.evidence_read_api_token)} "
+        f"evidence_read_api_tokens={_present(settings.evidence_read_api_tokens)} "
+        f"evidence_cursor_signing_key={_present(settings.evidence_cursor_signing_key)} "
+        f"metrics_token={_present(settings.metrics_token)}"
+    )
 
 
 class Settings(BaseSettings):
@@ -77,7 +150,10 @@ class Settings(BaseSettings):
     @field_validator("trusted_proxies")
     @classmethod
     def _valid_trusted_proxies(cls, value: str) -> str:
-        parse_trusted_proxies(value)
+        try:
+            parse_trusted_proxies(value)
+        except ValueError as exc:
+            raise ValueError(_see_example(str(exc))) from exc
         return value
 
     @field_validator("log_format")
@@ -101,42 +177,50 @@ class Settings(BaseSettings):
         normalized_evidence = self.evidence_read_api_token.strip().lower()
         normalized_cursor_key = self.evidence_cursor_signing_key.strip().lower()
         if normalized in _FORBIDDEN_SECRETS:
-            raise ValueError("API_TOKEN must be a non-example secret")
+            raise ValueError(_see_example("API_TOKEN must be a non-example secret"))
         if normalized_evidence in _FORBIDDEN_SECRETS:
-            raise ValueError("EVIDENCE_READ_API_TOKEN must be a non-example secret")
+            raise ValueError(_see_example("EVIDENCE_READ_API_TOKEN must be a non-example secret"))
         if normalized_cursor_key in _FORBIDDEN_SECRETS:
-            raise ValueError("EVIDENCE_CURSOR_SIGNING_KEY must be a non-example secret")
+            raise ValueError(_see_example("EVIDENCE_CURSOR_SIGNING_KEY must be a non-example secret"))
         if secrets.compare_digest(self.api_token, self.evidence_read_api_token):
-            raise ValueError("EVIDENCE_READ_API_TOKEN must differ from API_TOKEN")
+            raise ValueError(_see_example("EVIDENCE_READ_API_TOKEN must differ from API_TOKEN"))
         if secrets.compare_digest(self.evidence_cursor_signing_key, self.api_token):
-            raise ValueError("EVIDENCE_CURSOR_SIGNING_KEY must differ from API_TOKEN")
+            raise ValueError(_see_example("EVIDENCE_CURSOR_SIGNING_KEY must differ from API_TOKEN"))
         if secrets.compare_digest(
             self.evidence_cursor_signing_key, self.evidence_read_api_token
         ):
             raise ValueError(
-                "EVIDENCE_CURSOR_SIGNING_KEY must differ from EVIDENCE_READ_API_TOKEN"
+                _see_example(
+                    "EVIDENCE_CURSOR_SIGNING_KEY must differ from EVIDENCE_READ_API_TOKEN"
+                )
             )
         try:
             api_tokens = self.active_api_tokens()
             evidence_tokens = self.active_evidence_read_tokens()
         except ValueError as exc:
-            raise ValueError(str(exc)) from exc
+            raise ValueError(_see_example(str(exc))) from exc
         for token in api_tokens:
             if token.strip().lower() in _FORBIDDEN_SECRETS:
-                raise ValueError("API_TOKENS must be a non-example secret")
+                raise ValueError(_see_example("API_TOKENS must be a non-example secret"))
         for token in evidence_tokens:
             if token.strip().lower() in _FORBIDDEN_SECRETS:
-                raise ValueError("EVIDENCE_READ_API_TOKENS must be a non-example secret")
+                raise ValueError(
+                    _see_example("EVIDENCE_READ_API_TOKENS must be a non-example secret")
+                )
         _reject_duplicates(api_tokens, "API_TOKENS")
         _reject_duplicates(evidence_tokens, "EVIDENCE_READ_API_TOKENS")
         for api_token in api_tokens:
             for evidence_token in evidence_tokens:
                 if secrets.compare_digest(api_token, evidence_token):
-                    raise ValueError("evidence-read tokens must differ from API tokens")
+                    raise ValueError(
+                        _see_example("evidence-read tokens must differ from API tokens")
+                    )
         for token in (*api_tokens, *evidence_tokens):
             if secrets.compare_digest(self.evidence_cursor_signing_key, token):
                 raise ValueError(
-                    "EVIDENCE_CURSOR_SIGNING_KEY must differ from every access token"
+                    _see_example(
+                        "EVIDENCE_CURSOR_SIGNING_KEY must differ from every access token"
+                    )
                 )
         return self
 
