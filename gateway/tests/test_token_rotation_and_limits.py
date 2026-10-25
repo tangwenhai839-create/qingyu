@@ -331,6 +331,8 @@ def test_http_rate_limit_skips_health_and_ignores_forwarded_for(monkeypatch):
         for index in range(4):
             health = client.get("/health", headers={"X-Forwarded-For": f"203.0.113.{index}"})
             assert health.status_code == 200
+            ready = client.get("/health/ready", headers={"X-Forwarded-For": f"203.0.113.{index}"})
+            assert ready.status_code == 200
         first = client.get(
             PING_PATH, headers={**API_HEADERS, "X-Forwarded-For": "198.51.100.10"}
         )

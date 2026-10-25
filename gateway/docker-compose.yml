@@ -16,5 +16,41 @@ services:
       timeout: 5s
       retries: 10
 
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Secrets come from gateway/.env. A blank value refuses to start.
+      # DATABASE_URL here is the in-network URL. The host-run value in .env
+      # stays on 127.0.0.1. POSTGRES_PASSWORD must be URL-safe.
+      # ARCHIVE_ROOT is the volume path, not the host placeholder in .env.
+      APP_ENV: ${APP_ENV:-production}
+      # Match the uvicorn command below. Do not take HOST from .env: that file
+      # is the host-run bind, and this process listens on all container interfaces.
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in gateway/.env}
+      EVIDENCE_READ_API_TOKEN: ${EVIDENCE_READ_API_TOKEN:?set EVIDENCE_READ_API_TOKEN in gateway/.env}
+      EVIDENCE_CURSOR_SIGNING_KEY: ${EVIDENCE_CURSOR_SIGNING_KEY:?set EVIDENCE_CURSOR_SIGNING_KEY in gateway/.env}
+      DATABASE_URL: postgresql+psycopg://qingyu:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/qingyu
+      ARCHIVE_ROOT: /data
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - archive_data:/data
+    command: ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
 volumes:
   qingyu_postgres:
+  archive_data:

@@ -6,13 +6,8 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.exc import SQLAlchemyError
 
-from .api_archive import router as archive_router
-from .api_evidence import router as evidence_router
-from .api_export import archive_router as export_archive_router
-from .api_export import conversation_router as export_conversation_router
-from .api_import import router as import_router
 from .auth import require_token
-from .config import get_settings
+from .config import get_settings, startup_config_report
 from .errors import safe_database_error, safe_log_exception
 from .logging_config import configure_logging
 from .observability import (
@@ -29,6 +24,9 @@ from .request_limits import (
 
 settings = get_settings()
 configure_logging(settings.log_level, settings.log_format)
+# Routers import the database engine. Report first so a missing DATABASE_URL
+# fails here, with a pointer at gateway/.env.example, instead of inside that import.
+logging.getLogger(__name__).info("%s", startup_config_report(settings))
 app = FastAPI(title=settings.app_name, version="0.1.0")
 rate_limiter = FixedWindowRateLimiter(
     limit=settings.rate_limit_requests,
@@ -38,11 +36,23 @@ app.state.rate_limiter = rate_limiter
 app.state.metrics = MetricsRegistry()
 app.add_middleware(ImportRequestSizeLimitMiddleware)
 app.add_middleware(RateLimitMiddleware, limiter=rate_limiter)
-app.include_router(archive_router)
-app.include_router(import_router)
-app.include_router(evidence_router)
-app.include_router(export_conversation_router)
-app.include_router(export_archive_router)
+
+
+def _include_routers(application: FastAPI) -> None:
+    from .api_archive import router as archive_router
+    from .api_evidence import router as evidence_router
+    from .api_export import archive_router as export_archive_router
+    from .api_export import conversation_router as export_conversation_router
+    from .api_import import router as import_router
+
+    application.include_router(archive_router)
+    application.include_router(import_router)
+    application.include_router(evidence_router)
+    application.include_router(export_conversation_router)
+    application.include_router(export_archive_router)
+
+
+_include_routers(app)
 
 
 @app.middleware("http")
@@ -99,6 +109,21 @@ async def database_error_handler(request, exc):
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": settings.app_name, "version": "0.1.0"}
+
+
+@app.get("/health/ready")
+def health_ready() -> JSONResponse:
+    """Readiness probe. 200 after SELECT 1, 503 when the database does not answer."""
+    from sqlalchemy import text
+
+    from .db import engine
+
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        return JSONResponse(status_code=503, content={"status": "not_ready"})
+    return JSONResponse(status_code=200, content={"status": "ready"})
 
 @app.get("/metrics", include_in_schema=False)
 def metrics(request: Request) -> PlainTextResponse:
