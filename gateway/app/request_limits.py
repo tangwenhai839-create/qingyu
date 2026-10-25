@@ -15,7 +15,7 @@ Body limits:
 Rate limit:
 
 - Fixed window, default 600 requests per 60 seconds, one bucket per client
-  address. ``/health`` is exempt.
+  address. ``/health`` and ``/health/ready`` are exempt.
 - The bucket is in-process. It is not shared across processes. The key is the
   client address, not the port. Expired windows are dropped once the map holds
   4096 keys; live windows are kept.
@@ -157,7 +157,7 @@ class RateLimitMiddleware:
         self.limiter = limiter
 
     async def __call__(self, scope, receive, send):
-        if scope.get("type") != "http" or scope.get("path") == "/health":
+        if scope.get("type") != "http" or scope.get("path") in {"/health", "/health/ready"}:
             await self.app(scope, receive, send)
             return
         settings = get_settings()
