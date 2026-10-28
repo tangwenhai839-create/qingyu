@@ -26,6 +26,16 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pytest -q
 
+  client:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: clients/python } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e ../../contracts -e ".[dev]"
+      - run: pytest -q
+
   gateway:
     runs-on: ubuntu-latest
     services:
