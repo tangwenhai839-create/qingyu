@@ -2,7 +2,7 @@
 
 This walks a new Gateway from clone to a ChatGPT export you can query. Every curl talks to `http://127.0.0.1:8000`. The paths, status codes, and JSON shapes below are the ones implemented in `gateway/app` (`api_import.py`, `api_evidence.py`, `evidence/schemas.py`, `importers/status.py`). Host binding, TLS, volumes, and backups are in [DEPLOYMENT.md](DEPLOYMENT.md). Windows commands and token rotation are in [gateway/README.md](../gateway/README.md).
 
-You need Python 3.12, Docker Compose v2 (for PostgreSQL 16), and a ChatGPT data-export zip whose file name ends in `.zip` and that contains `conversations.json`.
+You need Python 3.12, PostgreSQL 16, and a ChatGPT data-export zip whose file name ends in `.zip` and that contains `conversations.json`. The default database path is Docker Compose v2 (`docker compose up -d db` below).
 
 ## 1. Clone, configure, migrate, and start
 
@@ -38,7 +38,9 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 `alembic upgrade head` is required before the first request that uses the database. uvicorn binds the `--host` and `--port` on the command line. `HOST` and `PORT` in `.env` are recorded in settings and the startup log.
 
-Imports do not finish inside the API process. In a second terminal, from the same `gateway/` directory and virtualenv, start the worker. It claims `pending` jobs and deletes expired staging:
+`docker compose up -d db` is the default path to PostgreSQL 16. If Docker is unavailable, any PostgreSQL 16 works: point `DATABASE_URL` at that server (host, port, user, database, and password), for example `postgresql+psycopg://<user>:<password>@<host>:<port>/<db>`, then run `alembic upgrade head` and uvicorn the same way. Skip `docker compose up -d db` in that case.
+
+Imports do not finish inside the API process. `gateway/docker-compose.yml` defines `db` and `app` only. It has no worker service, so Compose does not start one. The worker must run as a separate process. In a second terminal, from the same `gateway/` directory and virtualenv, start it. It claims `pending` jobs and deletes expired staging:
 
 ```bash
 cd /path/to/qingyu/gateway
@@ -86,7 +88,7 @@ A missing or wrong operator token on that route is 401 with `{"detail": "Invalid
 
 ### Docker Compose instead of a host process
 
-From `gateway/`, with the same `.env` filled in, `docker compose up -d --build` waits for PostgreSQL, runs `alembic upgrade head` inside the app container, and publishes the API on `127.0.0.1:8000`. Leave `DATABASE_URL` on `127.0.0.1`; the app service builds its own URL. `POSTGRES_PASSWORD` must be URL-safe for that service (letters, digits, hyphen, underscore). The import worker is still a separate process, and it has to see the same archive volume:
+From `gateway/`, with the same `.env` filled in, `docker compose up -d --build` waits for PostgreSQL, runs `alembic upgrade head` inside the app container, and publishes the API on `127.0.0.1:8000`. Leave `DATABASE_URL` on `127.0.0.1`; the app service builds its own URL. `POSTGRES_PASSWORD` must be URL-safe for that service (letters, digits, hyphen, underscore). Compose has no worker service, so the import worker is still a separate process. It has to see the same archive volume:
 
 ```bash
 docker compose run --rm app python -m app.importers.worker_runtime
@@ -96,15 +98,30 @@ The curls in the next sections are the same.
 
 ## 2. Upload a ChatGPT export
 
+The worker must be running as its own process before this upload. Compose has no worker service (`db` and `app` only), so neither `docker compose up -d db` nor `docker compose up -d --build` starts it. From `gateway/`, with the same virtualenv and `.env` as the API:
+
+```bash
+python -m app.importers.worker_runtime
+```
+
+When the API is the Compose `app` service, run the same module in that image so it sees the archive volume:
+
+```bash
+docker compose run --rm app python -m app.importers.worker_runtime
+```
+
+Leave that process running. The 202 below stays `pending` until the worker claims the job.
+
 `POST /api/v1/import/chatgpt` accepts the zip as multipart field `file` and returns 202. The router is mounted at `/api/v1` and depends on `require_token`, so the call needs the operator bearer token. `EVIDENCE_READ_API_TOKEN` is not enough.
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8000/api/v1/import/chatgpt \
+import_body=$(curl -sS -X POST http://127.0.0.1:8000/api/v1/import/chatgpt \
   -H "Authorization: Bearer $API_TOKEN" \
-  -F "file=@chatgpt-export.zip"
+  -F "file=@chatgpt-export.zip")
+printf '%s\n' "$import_body"
 ```
 
-The handler returns one field:
+The handler returns one field, `import_job_id`. The 202 body does not contain `job_id`.
 
 ```json
 {"import_job_id": "3f9c2a54-8f21-4d1e-9c66-3f6e88a1b2d4"}
@@ -114,7 +131,16 @@ The file name must end in `.zip` (415 otherwise). The zip is rejected with 413 w
 
 ## 3. Poll the import job
 
-`GET /api/v1/import-jobs/{job_id}` uses the same operator token. `job_id` is the UUID from step 2.
+`GET /api/v1/import-jobs/{job_id}` uses the same operator token. `{job_id}` is only the path parameter name. The value is the `import_job_id` field from the step 2 202 body. That body has no `job_id` field. A poll script must read `import_job_id`, not `job_id`.
+
+```bash
+# 202 JSON key is import_job_id, not job_id.
+import_job_id=$(printf '%s\n' "$import_body" | python -c 'import json,sys; print(json.load(sys.stdin)["import_job_id"])')
+curl -sS -H "Authorization: Bearer $API_TOKEN" \
+  "http://127.0.0.1:8000/api/v1/import-jobs/${import_job_id}"
+```
+
+The sample responses below use `import_job_id` `3f9c2a54-8f21-4d1e-9c66-3f6e88a1b2d4`. The same GET with that id:
 
 ```bash
 curl -sS -H "Authorization: Bearer $API_TOKEN" \
@@ -184,7 +210,7 @@ The sample below is one conversation with two new messages in a zip whose only m
 
 A failed job sets `status` to `failed` (or `partial` when a durable batch already committed), sets `result_code` and `error_code`, and sets `errors` to that error string. A zip the parser does not recognize finishes `failed` with `result_code` `unsupported_structure`.
 
-`POST /api/v1/import-jobs/{job_id}/retry` also needs the operator token. It applies only when `status` is `failed` or `partial`. A retry the worker accepts returns 202:
+`POST /api/v1/import-jobs/{job_id}/retry` also needs the operator token. The path value is the same `import_job_id` from the 202 body, not a `job_id` field. It applies only when `status` is `failed` or `partial`. A retry the worker accepts returns 202:
 
 ```bash
 curl -sS -X POST \
