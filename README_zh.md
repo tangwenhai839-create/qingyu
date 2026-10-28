@@ -63,6 +63,8 @@
 
 ## 快速开始（Gateway）
 
+从克隆到第一次证据查询的步骤见 [docs/QUICKSTART.md](docs/QUICKSTART.md)（英文）。
+
 需要 Python 3.12 和 PostgreSQL 16。以下步骤已在 Linux + 本地 PostgreSQL 16 上验证；`docker compose` 一步供方便使用。
 
 ```bash
