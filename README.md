@@ -95,6 +95,8 @@ flowchart LR
 
 ## Quickstart (Gateway)
 
+The walkthrough from clone through the first evidence query is [docs/QUICKSTART.md](docs/QUICKSTART.md).
+
 Requires Python 3.12 and PostgreSQL 16. These steps were checked on Linux against a local PostgreSQL 16; the `docker compose` step is provided for convenience.
 
 ```bash
