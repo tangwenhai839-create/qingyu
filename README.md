@@ -20,6 +20,7 @@ Based on the code and tests in this repository as of October 2026:
 
 - **Gateway (Phase 3 frozen + Amendment #1).** Content-addressed raw archive (SHA-256 + manifest), ChatGPT export import (zip upload, staging, retry, cleanup worker), normalized conversation/message/attachment evidence, a GET-only Evidence Query API with its own read token and signed pagination cursors, and a GET-only export that packages a conversation or the full archive as a zip with a SHA-256 manifest. Export does not update or delete evidence. 16 Alembic migrations. The Gateway test suite (364 passed, 6 skipped) passes against a local PostgreSQL 16.
 - **Contracts.** Pydantic DTOs and JSON Schemas for `evidence-query-v1` and `core-identity-v1`, with tests.
+- **Evidence client.** [`clients/python`](clients/python) is an installable `qingyu-client` package: a GET-only httpx wrapper for `/api/v1/evidence` that reuses those DTOs and follows signed pagination cursors until `next_cursor` is null.
 - **Core foundation pieces.** GENESIS service with an in-memory 2-of-3 test authority, continuity/epoch fencing checks, read-model and Gateway evidence clients, canonical JSON hashing, audit records. These have unit tests that run on plain Linux (see `ci/core-portable-tests.txt`).
 
 **Partial / in acceptance**
@@ -90,6 +91,7 @@ flowchart LR
 | [`gateway/`](gateway) | Memory Gateway: archive, ChatGPT import, evidence, read-only Evidence API |
 | [`core/`](core) | Core: identity, continuity, governance, signer trust, audit, R1 control plane |
 | [`contracts/`](contracts) | Shared DTOs and JSON Schemas between Gateway and Core |
+| [`clients/python/`](clients/python) | Read-only `qingyu-client` for the Evidence Query API |
 
 ## Quickstart (Gateway)
 
@@ -141,6 +143,9 @@ cd ../contracts && pip install -e ".[dev]" && pytest -q
 # Core (portable subset)
 cd ../core && pip install -e ".[dev]"
 for f in $(sed 's#^core/##' ../ci/core-portable-tests.txt); do pytest -q "$f"; done
+
+# Evidence Query client
+cd ../clients/python && pip install -e ../../contracts -e ".[dev]" && pytest -q
 ```
 
 If the test database isn't migrated to the latest revision, Gateway tests stop early and tell you to run `DATABASE_URL=$TEST_DATABASE_URL APP_ENV=test alembic upgrade head`.
@@ -151,7 +156,7 @@ Core was developed mainly on Windows. Running its full suite needs the setup des
 
 Consistent with the status above; nothing here is a promise of dates.
 
-0. GitHub Actions CI is enabled in [`.github/workflows/ci.yml`](.github/workflows/ci.yml): lint, contracts, Gateway on PostgreSQL 16, and the portable Core subset.
+0. GitHub Actions CI is enabled in [`.github/workflows/ci.yml`](.github/workflows/ci.yml): lint, contracts, the Evidence Query client, Gateway on PostgreSQL 16, and the portable Core subset.
 1. Make the full Core test suite runnable on Linux CI (Docker-based PostgreSQL fixtures, skip Windows-only tests cleanly).
 2. Close the Core R1 acceptance blockers and finish phase-b2 (activation, signer admission, backup, migration readiness).
 3. Production GENESIS and activation ceremony, with an independent witness.
