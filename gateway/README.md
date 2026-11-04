@@ -62,6 +62,8 @@ docker compose up -d db
 
 `POST /api/v1/ingest/messages`, `POST /api/v1/ingest/messages:batch`, and `POST /api/v1/ingest/conversations` append evidence through Archive → ImportJob (`qingyu_native`) → ImportBatchCommit. `INGEST_CLIENTS` maps `client_id` to SHA-256 token hashes. The ledger `ingest_requests` is unique on `(client_id, client_request_id)` and is not a queue. Reuse `client_request_id` on retry. `payload_hash` only detects a conflicting body. See [../docs/QUICKSTART.md](../docs/QUICKSTART.md).
 
+The stdio MCP adapter in [`../clients/mcp`](../clients/mcp) is another process. It calls these HTTP routes. It is not a Gateway route, and it does not write the ledger itself.
+
 ## Search
 
 `POST /api/v1/evidence/search` (evidence-read token or API token) is a read-only substring search. Two-character Chinese queries use the bigram GIN index on `message_revisions.content_text`, not `pg_trgm`. The response contract is `evidence-search-v1`. The three GET evidence routes stay `evidence-query-v1`. See [../docs/QUICKSTART.md](../docs/QUICKSTART.md) and [docs/GATEWAY_FROZEN_MAINTENANCE_AMENDMENT_2.md](docs/GATEWAY_FROZEN_MAINTENANCE_AMENDMENT_2.md).

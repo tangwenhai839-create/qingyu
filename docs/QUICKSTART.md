@@ -335,3 +335,7 @@ curl -sS -X POST http://127.0.0.1:8000/api/v1/ingest/messages \
 ```
 
 `content_kind` is `conversation_message`, `client_generated_summary`, or `user_note`. A summary cannot use `role` `user`. The read APIs are unchanged: `evidence-query-v1` on the GET routes and `evidence-search-v1` on search. After the worker finishes, the new observation is visible there. Each write is an `append_delta` observation, not an edit of an older one.
+
+## 7. MCP stdio adapter
+
+[`clients/mcp`](../clients/mcp) is a separate process with four tools: `search_evidence`, `read_evidence`, `ingest_message`, and `ingest_conversation`. Search and read call the evidence HTTP routes. The two write tools call the ingest routes above and reuse one `client_request_id` per `idempotency_key` across a process restart. It does not open a port and it does not add a gateway write path. The environment variables and `python -m qingyu_mcp` are in [clients/mcp/README.md](../clients/mcp/README.md).
