@@ -14,3 +14,5 @@ dist/
 core/.tmp/
 core/<repo>/
 .ruff_cache/
+qingyu-mcp-pending.jsonl
+qingyu-mcp-pending.jsonl.lock
