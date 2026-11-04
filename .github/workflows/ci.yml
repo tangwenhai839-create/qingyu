@@ -60,8 +60,35 @@ jobs:
       - name: Alembic history has a single head
         run: python -c "from alembic.script import ScriptDirectory; heads = ScriptDirectory('alembic').get_heads(); assert len(heads) == 1, heads"
       # Backup tests invoke pg_dump/pg_restore and require client version 16,
-      # matching the service container. The runner image does not ship that client.
-      - run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+      # matching the postgres:16 service. ubuntu-latest does not ship that
+      # client; install it from the PostgreSQL Apt repository, which follows
+      # the runner's Ubuntu codename (resolute-pgdg on 26.04, and later suites).
+      - name: Install PostgreSQL 16 client
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl
+          if sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-common \
+            && [ -x /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh ]; then
+            sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          else
+            sudo install -d /usr/share/postgresql-common/pgdg
+            sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+              https://www.postgresql.org/media/keys/ACCC4CF8.asc
+            codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+            arch="$(dpkg --print-architecture)"
+            sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null <<EOF
+          Types: deb
+          URIs: https://apt.postgresql.org/pub/repos/apt
+          Suites: ${codename}-pgdg
+          Architectures: ${arch}
+          Components: main
+          Signed-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          EOF
+            sudo apt-get update
+          fi
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-client-16
+          pg_dump --version | grep -q 'PostgreSQL) 16\.'
       - run: alembic upgrade head
       - run: pytest -q
 
