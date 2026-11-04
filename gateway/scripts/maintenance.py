@@ -8,6 +8,11 @@ error text is scrubbed before it is printed.
 Restore refuses the long-term application database, the test database, and the
 PostgreSQL service databases. It also refuses to restore into the database
 named by the backup. Upgrade never downgrades.
+
+``repair-manifests`` fills manifest files that are missing. It does not
+overwrite a manifest that is already a regular file. ``verify --evidence``
+checks observation links, object bytes, and manifest completeness against a
+live database and archive root.
 """
 
 from __future__ import annotations
@@ -27,7 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 
@@ -36,6 +41,25 @@ DUMP_NAME = "database.dump"
 INVENTORY_NAME = "inventory.json"
 INVENTORY_HASH_NAME = "inventory.sha256"
 COMMITTED_PREFIXES = ("archive/objects/", "manifests/")
+# (table, nullable archive_object_id). Names are fixed; they are not user input.
+EVIDENCE_LINK_TABLES = (
+    ("archive_observations", False),
+    ("conversation_observations", False),
+    ("attachment_observations", True),
+    ("message_revisions", True),
+)
+MANIFEST_REQUIRED_KEYS = (
+    "manifest_version",
+    "object_id",
+    "sha256",
+    "expected_sha256",
+    "size_bytes",
+    "relative_path",
+    "media_type",
+    "integrity_status",
+    "integrity_checked_at",
+    "integrity_error",
+)
 PROTECTED_RESTORE_DATABASES = frozenset(
     {"qingyu", "qingyu_test", "postgres", "template0", "template1"}
 )
@@ -651,6 +675,186 @@ def verify(source: Path) -> None:
     )
 
 
+def _read_regular_bytes(path: Path) -> bytes:
+    fd = _open_nofollow(path)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise MaintenanceError("manifest is not a regular file")
+        chunks: list[bytes] = []
+        while True:
+            block = os.read(fd, 1024 * 1024)
+            if not block:
+                break
+            chunks.append(block)
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
+
+
+def archive_object_detail_rows(url: str) -> list[dict[str, object]]:
+    engine = _engine(url, read_only=True)
+    try:
+        with engine.connect() as conn:
+            present = conn.scalar(text("SELECT to_regclass('public.archive_objects')"))
+            if present is None:
+                raise MaintenanceError("archive_objects is missing")
+            result = conn.execute(
+                text(
+                    "SELECT id::text AS id, sha256, size_bytes, relative_path, media_type, "
+                    "integrity_status, integrity_error, integrity_checked_at "
+                    "FROM archive_objects ORDER BY sha256, relative_path"
+                )
+            )
+            rows = [dict(row._mapping) for row in result]
+    except SQLAlchemyError as exc:
+        raise MaintenanceError(f"could not read archive objects ({exc.__class__.__name__})") from None
+    finally:
+        engine.dispose()
+    return rows
+
+
+def _table_exists(conn, table: str) -> bool:
+    if table not in {name for name, _nullable in EVIDENCE_LINK_TABLES}:
+        raise MaintenanceError("evidence table is missing")
+    present = conn.scalar(text("SELECT to_regclass(:qualified)"), {"qualified": f"public.{table}"})
+    return present is not None
+
+
+def _broken_observation_links(url: str) -> None:
+    engine = _engine(url, read_only=True)
+    try:
+        with engine.connect() as conn:
+            for table, nullable in EVIDENCE_LINK_TABLES:
+                if not _table_exists(conn, table):
+                    raise MaintenanceError(f"evidence table is missing: {table}")
+                null_guard = f"{table}.archive_object_id IS NOT NULL AND " if nullable else ""
+                count = conn.scalar(
+                    text(
+                        f"SELECT count(*) FROM {table} "
+                        f"LEFT JOIN archive_objects ON archive_objects.id = {table}.archive_object_id "
+                        f"WHERE {null_guard}archive_objects.id IS NULL"
+                    )
+                )
+                if count:
+                    raise MaintenanceError(f"{table} rows are not linked to an archive object")
+    except SQLAlchemyError as exc:
+        raise MaintenanceError(f"could not read evidence links ({exc.__class__.__name__})") from None
+    finally:
+        engine.dispose()
+
+
+def _timestamps_match(stored: object, rendered: object) -> bool:
+    if stored is None or rendered is None:
+        return stored is None and rendered is None
+    if not isinstance(stored, datetime) or not isinstance(rendered, str) or not rendered:
+        return False
+    try:
+        parsed = datetime.fromisoformat(rendered)
+    except ValueError:
+        return False
+    if stored.tzinfo is None:
+        stored = stored.replace(tzinfo=UTC)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return stored.astimezone(UTC) == parsed.astimezone(UTC)
+
+
+def _manifest_problem(document: object, row: dict[str, object]) -> str | None:
+    if not isinstance(document, dict) or any(key not in document for key in MANIFEST_REQUIRED_KEYS):
+        return "archive manifest is incomplete"
+    version = document.get("manifest_version")
+    if isinstance(version, bool) or version != 2:
+        return "archive manifest is incomplete"
+    size = document.get("size_bytes")
+    if isinstance(size, bool) or not isinstance(size, int):
+        return "archive manifest is incomplete"
+    identity_matches = (
+        document.get("object_id") == row["id"]
+        and document.get("sha256") == row["sha256"]
+        and document.get("expected_sha256") == row["sha256"]
+        and size == row["size_bytes"]
+        and document.get("relative_path") == row["relative_path"]
+        and document.get("media_type") == row["media_type"]
+        and document.get("integrity_status") == row["integrity_status"]
+        and document.get("integrity_error") == row["integrity_error"]
+        and _timestamps_match(row["integrity_checked_at"], document.get("integrity_checked_at"))
+    )
+    if not identity_matches:
+        return "archive manifest does not match the archive object"
+    return None
+
+
+def _verify_manifest_file(archive_root: Path, row: dict[str, object]) -> None:
+    sha256 = row["sha256"]
+    if not isinstance(sha256, str) or len(sha256) != 64:
+        raise MaintenanceError("archive object hash is invalid")
+    path = archive_root / "manifests" / f"{sha256}.json"
+    if path.is_symlink() or not path.exists():
+        raise MaintenanceError("archive manifest is missing")
+    try:
+        payload = _read_regular_bytes(path)
+    except MaintenanceError:
+        raise
+    except OSError:
+        raise MaintenanceError("archive manifest is missing") from None
+    try:
+        document = json.loads(payload.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError):
+        raise MaintenanceError("archive manifest is incomplete") from None
+    problem = _manifest_problem(document, row)
+    if problem is not None:
+        raise MaintenanceError(problem)
+
+
+def verify_evidence(database_url: str, expect_database: str, archive_root: Path) -> None:
+    """Check live observation links, object bytes, and manifest completeness."""
+    target = open_target(database_url, expect_database, operation="verify")
+    archive_root = _require_real_directory(archive_root, "archive root")
+    _broken_observation_links(target.url_text)
+    rows = archive_object_detail_rows(target.url_text)
+    verify_object_bytes(
+        archive_root,
+        [
+            (str(row["sha256"]), int(row["size_bytes"]), str(row["relative_path"]))
+            for row in rows
+        ],
+    )
+    for row in rows:
+        _verify_manifest_file(archive_root, row)
+    print(f"evidence verified: {len(rows)} archive objects", file=sys.stderr)
+
+
+def repair_manifests(database_url: str, expect_database: str, archive_root: Path) -> None:
+    """Write missing manifests from committed archive rows. Never replace an existing file."""
+    target = open_target(database_url, expect_database, operation="repair")
+    archive_root = _require_real_directory(archive_root, "archive root")
+    if not os.environ.get("DATABASE_URL"):
+        os.environ["DATABASE_URL"] = target.url_text
+    from app.archive.manifest import ManifestRepairRefused, repair_missing_manifests
+    from app.models import ArchiveObject
+    from sqlalchemy.orm import Session
+
+    engine = _engine(target.url_text, read_only=True)
+    try:
+        try:
+            with Session(engine) as session:
+                records = list(
+                    session.scalars(
+                        select(ArchiveObject).order_by(ArchiveObject.sha256, ArchiveObject.id)
+                    )
+                )
+                try:
+                    written, kept = repair_missing_manifests(archive_root, records)
+                except ManifestRepairRefused as exc:
+                    raise MaintenanceError(str(exc)) from None
+        except SQLAlchemyError as exc:
+            raise MaintenanceError(f"could not read archive objects ({exc.__class__.__name__})") from None
+    finally:
+        engine.dispose()
+    print(f"repair-manifests complete: wrote {written}, kept {kept}", file=sys.stderr)
+
+
 def restore(database_url: str, expect_database: str, archive_root: Path, source: Path) -> None:
     # Protected names are rejected before a connection or a file copy.
     if expect_database.lower() in PROTECTED_RESTORE_DATABASES:
@@ -765,8 +969,25 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     upgrade_parser.add_argument("--archive-root", type=_path)
     upgrade_parser.add_argument("--backup-dir", type=_path)
 
-    verify_parser = subparsers.add_parser("verify", help="Check a backup directory without restoring it")
-    verify_parser.add_argument("--source", required=True, type=_path)
+    repair_parser = subparsers.add_parser(
+        "repair-manifests",
+        help="Write manifest files that are missing; do not overwrite existing ones",
+    )
+    repair_parser.add_argument("--expect-database", required=True)
+    repair_parser.add_argument("--archive-root", required=True, type=_path)
+
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Check a backup directory, or check live evidence links and manifests",
+    )
+    verify_parser.add_argument("--source", type=_path, help="Backup directory to check")
+    verify_parser.add_argument(
+        "--evidence",
+        action="store_true",
+        help="Check observation links, object bytes, and manifest completeness",
+    )
+    verify_parser.add_argument("--expect-database")
+    verify_parser.add_argument("--archive-root", type=_path)
     return parser.parse_args(argv)
 
 
@@ -780,11 +1001,23 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         args = parse_args(args_list)
-        if args.command == "verify":
+        if args.command == "verify" and not args.evidence:
+            if args.source is None:
+                raise MaintenanceError("verify requires --source or --evidence")
             verify(args.source)
             return 0
         database_url = require_database_url(args.database_url)
-        if args.command == "backup":
+        if args.command == "verify":
+            if args.source is not None:
+                raise MaintenanceError("verify --evidence does not take --source")
+            if not args.expect_database or args.archive_root is None:
+                raise MaintenanceError(
+                    "verify --evidence requires --expect-database and --archive-root"
+                )
+            verify_evidence(database_url, args.expect_database, args.archive_root)
+        elif args.command == "repair-manifests":
+            repair_manifests(database_url, args.expect_database, args.archive_root)
+        elif args.command == "backup":
             backup(database_url, args.expect_database, args.archive_root, args.dest)
         elif args.command == "restore":
             restore(database_url, args.expect_database, args.archive_root, args.source)

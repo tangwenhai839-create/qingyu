@@ -1,5 +1,6 @@
 import json
 import os
+import stat
 import tempfile
 from pathlib import Path
 
@@ -19,6 +20,67 @@ def render_manifest(record: ArchiveObject) -> dict:
         "integrity_checked_at": record.integrity_checked_at.isoformat() if record.integrity_checked_at else None,
         "integrity_error": record.integrity_error,
     }
+
+
+class ManifestRepairRefused(RuntimeError):
+    """A manifest path that repair must not replace."""
+
+
+def manifest_path(root: Path, sha256: str) -> Path:
+    if not _sha256_filename(sha256):
+        raise ManifestRepairRefused("archive object hash is invalid")
+    return root / "manifests" / f"{sha256}.json"
+
+
+def manifest_is_finalized(root: Path, sha256: str) -> bool:
+    """True when a regular ``manifests/<sha256>.json`` file is already published.
+
+    A missing file means finalize has not finished (or the file was removed).
+    Symlinks and other non-regular entries are not treated as finalized.
+    """
+    if not _sha256_filename(sha256):
+        return False
+    path = root / "manifests" / f"{sha256}.json"
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISREG(info.st_mode)
+
+
+def repair_missing_manifests(root: Path, records) -> tuple[int, int]:
+    """Write manifests that are absent. Existing regular files are left unchanged.
+
+    Returns ``(written, kept)``. A symlink or other non-regular manifest path
+    is refused instead of being replaced.
+    """
+    manifests = root / "manifests"
+    if manifests.is_symlink():
+        raise ManifestRepairRefused("refusing to overwrite an unsafe manifest path")
+    written = 0
+    kept = 0
+    for record in records:
+        path = manifest_path(root, record.sha256)
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            sync_manifest_from_archive_object(root, record)
+            written += 1
+            continue
+        except OSError as exc:
+            raise ManifestRepairRefused("manifest path could not be inspected") from exc
+        if not stat.S_ISREG(info.st_mode):
+            raise ManifestRepairRefused("refusing to overwrite an unsafe manifest path")
+        kept += 1
+    return written, kept
+
+
+def _sha256_filename(sha256: object) -> bool:
+    return (
+        isinstance(sha256, str)
+        and len(sha256) == 64
+        and all(char in "0123456789abcdef" for char in sha256)
+    )
 
 
 def sync_manifest_from_archive_object(root: Path, record: ArchiveObject) -> Path:

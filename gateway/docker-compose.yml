@@ -51,6 +51,29 @@ services:
       retries: 12
       start_period: 30s
 
+  # Same image and archive volume as the API. Imports finish without a second
+  # terminal: this process claims jobs after the manifest file exists.
+  worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in gateway/.env}
+      EVIDENCE_READ_API_TOKEN: ${EVIDENCE_READ_API_TOKEN:?set EVIDENCE_READ_API_TOKEN in gateway/.env}
+      EVIDENCE_CURSOR_SIGNING_KEY: ${EVIDENCE_CURSOR_SIGNING_KEY:?set EVIDENCE_CURSOR_SIGNING_KEY in gateway/.env}
+      DATABASE_URL: postgresql+psycopg://qingyu:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/qingyu
+      ARCHIVE_ROOT: /data
+      # One missing-manifest pass at startup. Set to 0 to skip it.
+      IMPORT_WORKER_REPAIR_MANIFESTS: ${IMPORT_WORKER_REPAIR_MANIFESTS:-1}
+    volumes:
+      - archive_data:/data
+    command: ["python", "-m", "app.importers.worker_runtime"]
+
 volumes:
   qingyu_postgres:
   archive_data:

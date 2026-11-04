@@ -12,6 +12,7 @@ import uuid
 import zipfile
 
 import pytest
+from app.archive.manifest import sync_manifest_from_archive_object
 from app.db import engine
 from app.importers.worker import ClaimedJob, ImportWorker
 from app.importers.worker_runtime import WorkerRuntime
@@ -54,6 +55,7 @@ def _pending_job(root, conversation_id):
         account=SourceAccount(platform='claim-snapshot',account_label=str(uuid.uuid4()),metadata_json={})
         archive=ArchiveObject(sha256=digest,size_bytes=len(content),relative_path=target.relative_to(root).as_posix(),media_type='application/zip',integrity_status='verified',metadata_json={})
         db.add_all([account,archive]); db.flush()
+        sync_manifest_from_archive_object(root, archive)
         job=ImportJob(source_account_id=account.id,archive_object_id=archive.id,parser_name='fixture',parser_version='0.1',status='pending',report_json={})
         db.add(job); db.commit(); return job.id
 

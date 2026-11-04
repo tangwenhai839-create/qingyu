@@ -26,8 +26,8 @@ class _IdleWorker:
     def recover_stale(self):
         self.db.events.append("recover")
 
-    def claim_next(self, lease_duration):
-        self.db.events.append("claim")
+    def claim_next(self, lease_duration, archive_root=None):
+        self.db.events.append(("claim", archive_root))
 
 
 def _result():
@@ -109,7 +109,7 @@ def test_cleanup_failure_is_private_and_does_not_block_worker(tmp_path, monkeypa
     )
 
     assert runtime.run_once() is False
-    assert events == ["rollback", "close", "recover", "claim", "close"]
+    assert events == ["rollback", "close", "recover", ("claim", tmp_path), "close"]
     assert runtime.last_iteration_failed is False
     assert "staging cleanup failed" in caplog.text
     assert marker not in caplog.text
@@ -146,6 +146,7 @@ def test_main_passes_validated_cleanup_configuration(monkeypatch, tmp_path):
         staging_cleanup_interval_seconds=45.0,
         staging_cleanup_max_candidates=17,
     )
+    monkeypatch.delenv("IMPORT_WORKER_REPAIR_MANIFESTS", raising=False)
     monkeypatch.setattr(worker_runtime, "get_settings", lambda: settings)
     monkeypatch.setattr(worker_runtime, "WorkerRuntime", Runtime)
 
@@ -153,4 +154,5 @@ def test_main_passes_validated_cleanup_configuration(monkeypatch, tmp_path):
     assert captured["staging_retention_days"] == 2
     assert captured["cleanup_interval_seconds"] == 45.0
     assert captured["cleanup_max_candidates"] == 17
+    assert captured["repair_manifests_on_start"] is True
     assert captured["ran"] is True

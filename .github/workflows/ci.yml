@@ -57,6 +57,8 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -e ".[dev]"
+      - name: Alembic history has a single head
+        run: python -c "from alembic.script import ScriptDirectory; heads = ScriptDirectory('alembic').get_heads(); assert len(heads) == 1, heads"
       # Backup tests invoke pg_dump/pg_restore and require client version 16,
       # matching the service container. The runner image does not ship that client.
       - run: sudo apt-get update && sudo apt-get install -y postgresql-client-16

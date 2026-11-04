@@ -3,6 +3,7 @@ import os
 import sys
 import threading
 import time
+from pathlib import Path
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -57,6 +58,7 @@ class WorkerRuntime:
         cleanup_interval_seconds=300.0,
         cleanup_max_candidates=100,
         monotonic=None,
+        repair_manifests_on_start=False,
     ):
         self.archive_root = archive_root
         self.poll_interval = poll_interval
@@ -74,6 +76,8 @@ class WorkerRuntime:
         self.stop_event = threading.Event()
         self.last_iteration_failed = False
         self._next_cleanup_at = None
+        self.repair_manifests_on_start = repair_manifests_on_start
+        self._manifests_repaired = False
 
     def _maybe_run_cleanup(self) -> None:
         now = self.monotonic()
@@ -130,7 +134,7 @@ class WorkerRuntime:
             worker = ImportWorker(db)
             worker.recover_stale()
             operation = "claim_next"
-            claim = worker.claim_next(self.lease_duration)
+            claim = worker.claim_next(self.lease_duration, archive_root=self.archive_root)
             if claim is None:
                 return False
             operation = "post_claim_setup"
@@ -207,7 +211,55 @@ class WorkerRuntime:
         """Pure post-commit boundary hook; the claim contains no ORM state."""
         return claim
 
+    def _repair_manifests_once(self) -> None:
+        """Fill archive manifests that are missing. Existing files are kept.
+
+        One attempt per process. A failure is logged and does not stop polling;
+        the operator command is ``python -m scripts.maintenance repair-manifests``.
+        """
+        if not self.repair_manifests_on_start or self._manifests_repaired:
+            return
+        self._manifests_repaired = True
+        db = None
+        try:
+            from sqlalchemy import select
+
+            from ..archive.manifest import repair_missing_manifests
+            from ..models import ArchiveObject
+
+            db = self.session_factory()
+            records = list(
+                db.scalars(select(ArchiveObject).order_by(ArchiveObject.sha256, ArchiveObject.id))
+            )
+            written, kept = repair_missing_manifests(Path(self.archive_root), records)
+            if written:
+                logger.info(
+                    "repaired missing archive manifests",
+                    extra={"written": written, "kept": kept},
+                )
+        except Exception as exc:  # noqa: BLE001
+            if db is not None:
+                try:
+                    db.rollback()
+                except Exception:  # noqa: BLE001, S110
+                    pass
+            safe_log_exception(
+                logger,
+                logging.ERROR,
+                "manifest repair failed",
+                error_code="manifest_repair_failed",
+                operation="repair_manifests",
+                exception=exc,
+            )
+        finally:
+            if db is not None:
+                try:
+                    db.close()
+                except Exception:  # noqa: BLE001, S110
+                    pass
+
     def run_forever(self):
+        self._repair_manifests_once()
         consecutive_failures = 0
         try:
             while not self.stop_event.is_set():
@@ -238,18 +290,26 @@ class WorkerRuntime:
             self.stop_event.set()
 
 
+def _env_enabled(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def main() -> int:
     try:
         settings = get_settings()
         configure_logging(settings.log_level, settings.log_format)
         runtime = WorkerRuntime(
-            archive_root=__import__('pathlib').Path(settings.archive_root),
+            archive_root=Path(settings.archive_root),
             poll_interval=float(os.getenv("IMPORT_WORKER_POLL_SECONDS", "1")),
             heartbeat_interval=float(os.getenv("IMPORT_WORKER_HEARTBEAT_SECONDS", "10")),
             lease_duration=int(os.getenv("IMPORT_WORKER_LEASE_SECONDS", "30")),
             staging_retention_days=settings.staging_failed_retention_days,
             cleanup_interval_seconds=settings.staging_cleanup_interval_seconds,
             cleanup_max_candidates=settings.staging_cleanup_max_candidates,
+            repair_manifests_on_start=_env_enabled("IMPORT_WORKER_REPAIR_MANIFESTS", True),
         )
         runtime.run_forever()
         return 0
