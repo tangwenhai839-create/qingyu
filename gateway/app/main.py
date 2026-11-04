@@ -3,6 +3,8 @@ import uuid
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -105,6 +107,18 @@ async def database_error_handler(request, exc):
         correlation_id=request_id,
     )
     return JSONResponse(status_code=500, content={"detail": {"code": error_code, "request_id": request_id}})
+
+
+@app.exception_handler(RequestValidationError)
+async def search_validation_does_not_echo_the_query(request: Request, exc: RequestValidationError):
+    """Search queries are private evidence. Do not copy the body into a 422."""
+    if request.url.path.rstrip("/") == "/api/v1/evidence/search":
+        return JSONResponse(
+            status_code=422,
+            content={"detail": {"code": "query_invalid"}},
+        )
+    return await request_validation_exception_handler(request, exc)
+
 
 @app.get("/health")
 def health() -> dict[str, str]:

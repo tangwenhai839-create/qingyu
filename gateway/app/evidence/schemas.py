@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 
 class PublicModel(BaseModel):
@@ -129,3 +129,61 @@ class AttachmentObservationPage(PublicModel):
     items: list[AttachmentAttemptEvidence]
     next_cursor: str | None
     limit: int = Field(ge=1, le=100)
+
+
+class EvidenceSearchRequest(PublicModel):
+    """Body of POST /api/v1/evidence/search. `from` and `to` are inclusive."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    q: str = Field(min_length=1, max_length=2000)
+    source_platform: str | None = Field(default=None, max_length=100)
+    source_account_id: uuid.UUID | None = None
+    conversation_id: uuid.UUID | None = None
+    time_from: datetime | None = Field(default=None, alias="from")
+    time_to: datetime | None = Field(default=None, alias="to")
+    limit: int = Field(default=20, ge=1, le=50)
+    cursor: str | None = Field(default=None, max_length=4096)
+
+    @field_validator("source_platform")
+    @classmethod
+    def _platform(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("blank")
+        return stripped
+
+    @field_validator("time_from", "time_to")
+    @classmethod
+    def _aware(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("timezone_required")
+        return value
+
+
+class EvidenceSearchHit(PublicModel):
+    conversation_observation_id: uuid.UUID
+    mapping_node_observation_id: uuid.UUID
+    message_revision_id: uuid.UUID
+    message_observation_id: uuid.UUID | None
+    conversation_id: uuid.UUID
+    source_account_id: uuid.UUID
+    source_platform: str
+    role: str
+    normalized_timestamp: datetime | None
+    snippet: str
+    score: int = Field(ge=0)
+    match_mode: Literal["bigram"]
+
+
+class EvidenceSearchPage(PublicModel):
+    contract_version: Literal["evidence-search-v1"] = "evidence-search-v1"
+    meaning: Literal["gateway_recorded_historical_evidence"] = (
+        "gateway_recorded_historical_evidence"
+    )
+    consistency: Literal["keyword_substring_match_v1"] = "keyword_substring_match_v1"
+    items: list[EvidenceSearchHit]
+    next_cursor: str | None
+    limit: int = Field(ge=1, le=50)

@@ -1,5 +1,6 @@
 import logging
 import uuid
+from dataclasses import asdict
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -10,7 +11,20 @@ from .config import Settings, get_settings
 from .db import get_db
 from .evidence.cursor import InvalidCursor, decode_cursor, encode_cursor
 from .evidence.query import EvidenceIntegrityError, EvidenceQueryService
-from .evidence.schemas import AttachmentObservationPage, NodePage, ObservationPage
+from .evidence.schemas import (
+    AttachmentObservationPage,
+    EvidenceSearchPage,
+    EvidenceSearchRequest,
+    NodePage,
+    ObservationPage,
+)
+from .evidence.search import (
+    EvidenceSearchRejected,
+    EvidenceSearchService,
+    SearchFilters,
+    normalize_search_query,
+    search_query_fingerprint,
+)
 
 router = APIRouter(
     prefix="/api/v1/evidence",
@@ -297,4 +311,95 @@ def list_attachment_observations(
         items=page.items,
         next_cursor=next_cursor,
         limit=limit,
+    )
+
+
+def _search_filters(body: EvidenceSearchRequest) -> SearchFilters:
+    return SearchFilters(
+        source_platform=body.source_platform,
+        source_account_id=body.source_account_id,
+        conversation_id=body.conversation_id,
+        time_from=body.time_from,
+        time_to=body.time_to,
+    )
+
+
+def _decode_search_cursor(cursor: str, *, settings: Settings, fingerprint: str):
+    try:
+        payload = decode_cursor(cursor, _cursor_secret(settings))
+        if payload.get("kind") != "evidence-search":
+            raise InvalidCursor("wrong_kind")
+        if payload.get("query_fingerprint") != fingerprint:
+            raise InvalidCursor("scope_mismatch")
+        after = payload["after"]
+        timestamp = after["normalized_timestamp"]
+        return (
+            datetime.fromisoformat(timestamp) if timestamp is not None else None,
+            uuid.UUID(after["id"]),
+        )
+    except (InvalidCursor, KeyError, TypeError, ValueError) as exc:
+        raise _invalid_cursor() from exc
+
+
+@router.post("/search", response_model=EvidenceSearchPage)
+def search_evidence(
+    body: EvidenceSearchRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> EvidenceSearchPage:
+    """Read-only substring search. The body is not written and is not logged."""
+    _private_no_store(response)
+    try:
+        query = normalize_search_query(body.q)
+    except EvidenceSearchRejected as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code},
+        ) from exc
+    filters = _search_filters(body)
+    if (
+        filters.time_from is not None
+        and filters.time_to is not None
+        and filters.time_from > filters.time_to
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "query_range_invalid"},
+        )
+    after = None
+    if body.cursor is not None:
+        after = _decode_search_cursor(
+            body.cursor,
+            settings=settings,
+            fingerprint=search_query_fingerprint(query, filters),
+        )
+    page = EvidenceSearchService(db).search(
+        q=query,
+        limit=body.limit,
+        filters=filters,
+        after=after,
+    )
+    next_cursor = None
+    if page.has_more and page.items:
+        last = page.items[-1]
+        next_cursor = encode_cursor(
+            {
+                "kind": "evidence-search",
+                "query_fingerprint": search_query_fingerprint(query, filters),
+                "after": {
+                    "normalized_timestamp": (
+                        last.normalized_timestamp.isoformat()
+                        if last.normalized_timestamp is not None
+                        else None
+                    ),
+                    "id": str(last.mapping_node_observation_id),
+                },
+            },
+            _cursor_secret(settings),
+        )
+    return EvidenceSearchPage(
+        items=[asdict(hit) for hit in page.items],
+        next_cursor=next_cursor,
+        limit=body.limit,
     )

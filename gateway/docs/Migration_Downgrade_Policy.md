@@ -14,6 +14,8 @@ Migration `0013_import_job_defaults` has a deterministic downgrade to
 the nullable/default contract established by `0005` and `0006`. It does not
 attempt to repair older destructive downgrade semantics.
 
+Migration `0017_evidence_search_bigram` adds `public.qingyu_text_bigrams(text)` and a GIN index on `message_revisions.content_text`. Upgrade builds the index with `CREATE INDEX CONCURRENTLY`. Downgrade drops the index and the function in the migration transaction and does not delete message text. It is only for disposable databases.
+
 Migration `0015_attachment_observations` moves runtime attachment evidence into
 an immutable, attempt-scoped table. Its downgrade deterministically restores the
 legacy attachment columns from the latest observation for each attachment, but

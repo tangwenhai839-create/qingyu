@@ -147,11 +147,17 @@ class MessageRevision(Base):
         UniqueConstraint("message_id", "revision_no", name="uq_message_revisions_no"),
         UniqueConstraint("message_id", "revision_fingerprint", name="uq_message_revisions_fingerprint"),
         UniqueConstraint("message_id", "id", name="uq_message_revisions_message_id"),
+        Index(
+            "ix_message_revisions_content_bigrams",
+            text("qingyu_text_bigrams(content_text)"),
+            postgresql_using="gin",
+        ),
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     message_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("messages.id"), nullable=False)
     revision_no: Mapped[int] = mapped_column(Integer, nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Indexed by public.qingyu_text_bigrams(content_text) (GIN), migration 0017.
     content_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     content_json: Mapped[dict | list | None] = mapped_column(JSONB, nullable=True)
     model: Mapped[str | None] = mapped_column(String(255), nullable=True)
