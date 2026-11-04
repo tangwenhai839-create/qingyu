@@ -20,7 +20,12 @@ from .auth import require_ingest_client
 from .config import get_settings
 from .db import get_db
 from .importers.native import parse_native_timestamp
-from .ingest.canonical import canonical_bytes, message_record, native_document, payload_hash
+from .ingest.canonical import (
+    canonical_bytes,
+    message_record,
+    native_document,
+    payload_hash,
+)
 from .ingest.service import read_ingest_request, submit_native_document
 
 router = APIRouter(prefix="/api/v1/ingest")

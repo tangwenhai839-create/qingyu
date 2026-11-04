@@ -190,14 +190,14 @@ def _run_worker(root: Path, job_id) -> str:
 
 
 def test_content_kind_changes_revision_fingerprint():
-    shared = dict(
-        role="assistant",
-        content_text="same words",
-        content_json={"content_type": "text", "parts": ["same words"]},
-        model=None,
-        raw_timestamp=None,
-        attachments=(),
-    )
+    shared = {
+        "role": "assistant",
+        "content_text": "same words",
+        "content_json": {"content_type": "text", "parts": ["same words"]},
+        "model": None,
+        "raw_timestamp": None,
+        "attachments": (),
+    }
     spoken = compute_revision_fingerprint(
         **shared,
         semantic_evidence={"content_kind": "conversation_message", "provenance": "client_declared"},
