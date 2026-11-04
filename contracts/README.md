@@ -28,7 +28,7 @@ The Evidence DTOs were checked against the frozen Gateway implementation:
 Gateway compatibility baseline:
 
 - Amendment #1 frozen contract: `evidence-query-v1`
-- Gateway migration head: `0017_evidence_search_bigram`
+- Gateway migration head: `0018_ingest_requests`
 - Gateway Phase 3 freeze baseline: `bb107edadce0168b14189b47e902fd4c31fe3f19`
 
 The contract package is a consumer-side DTO boundary. A Core implementation

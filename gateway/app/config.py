@@ -1,3 +1,4 @@
+import re
 import secrets
 from functools import lru_cache
 
@@ -40,6 +41,45 @@ def split_token_list(value: str) -> tuple[str, ...]:
     if any(part == "" for part in parts):
         raise ValueError("token list contains an empty entry")
     return parts
+
+
+_CLIENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_TOKEN_HASH = re.compile(r"^[0-9a-f]{64}$")
+
+
+def parse_ingest_clients(value: str) -> dict[str, tuple[str, ...]]:
+    """Map ``client_id:sha256`` entries to client id and token hashes.
+
+    The environment stores hashes only. A client may have more than one hash
+    so a token can be rotated without revoking the other clients. One hash
+    belongs to one client.
+    """
+    if not value or not value.strip():
+        return {}
+    parts = tuple(part.strip() for part in value.split(","))
+    if any(part == "" for part in parts):
+        raise ValueError("INGEST_CLIENTS contains an empty entry")
+    grouped: dict[str, list[str]] = {}
+    owners: dict[str, str] = {}
+    for part in parts:
+        client_id, separator, digest = part.partition(":")
+        digest = digest.strip().lower()
+        if (
+            not separator
+            or _CLIENT_ID.fullmatch(client_id) is None
+            or _TOKEN_HASH.fullmatch(digest) is None
+        ):
+            raise ValueError(
+                "INGEST_CLIENTS entries must be client_id:sha256 of the bearer token"
+            )
+        owner = owners.get(digest)
+        if owner is not None and owner != client_id:
+            raise ValueError("INGEST_CLIENTS reuses a token hash for two clients")
+        if digest in grouped.get(client_id, ()):
+            raise ValueError("INGEST_CLIENTS contains a duplicate token hash")
+        owners[digest] = client_id
+        grouped.setdefault(client_id, []).append(digest)
+    return {client_id: tuple(hashes) for client_id, hashes in grouped.items()}
 
 
 def combine_tokens(primary: str, additional: str) -> tuple[str, ...]:
@@ -115,7 +155,8 @@ def startup_config_report(settings: "Settings") -> str:
         f"evidence_read_api_token={_present(settings.evidence_read_api_token)} "
         f"evidence_read_api_tokens={_present(settings.evidence_read_api_tokens)} "
         f"evidence_cursor_signing_key={_present(settings.evidence_cursor_signing_key)} "
-        f"metrics_token={_present(settings.metrics_token)}"
+        f"metrics_token={_present(settings.metrics_token)} "
+        f"ingest_clients={_present(settings.ingest_clients)}"
     )
 
 
@@ -145,6 +186,11 @@ class Settings(BaseSettings):
     rate_limit_window_seconds: float = Field(default=60.0, gt=0)
     # Comma-separated CIDRs. Empty ignores X-Forwarded-For and X-Real-IP.
     trusted_proxies: str = ""
+    # client_id:sha256(token) entries. The raw token is never stored.
+    ingest_clients: str = ""
+    # Seconds the ingest route polls a worker before returning 202. Zero returns
+    # as soon as the ledger row is still archived. The route does not run the job.
+    ingest_sync_wait_seconds: float = Field(default=3.0, ge=0, le=30)
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @field_validator("trusted_proxies")
@@ -169,8 +215,16 @@ class Settings(BaseSettings):
         """Primary evidence-read token plus every additional read token."""
         return combine_tokens(self.evidence_read_api_token, self.evidence_read_api_tokens)
 
+    def ingest_client_directory(self) -> dict[str, tuple[str, ...]]:
+        """client_id to the SHA-256 hex digests of that client's bearer tokens."""
+        return parse_ingest_clients(self.ingest_clients)
+
     @model_validator(mode="after")
     def secure_api_token(self):
+        try:
+            self.ingest_client_directory()
+        except ValueError as exc:
+            raise ValueError(_see_example(str(exc))) from exc
         if self.app_env.lower() == "test":
             return self
         normalized = self.api_token.strip().lower()

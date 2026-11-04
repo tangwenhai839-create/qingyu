@@ -316,3 +316,22 @@ Hits are mapping-node observations of committed revisions, newest `normalized_ti
   "limit": 20
 }
 ```
+
+## 6. Append a native message
+
+`POST /api/v1/ingest/messages` writes one message through the same archive and import path as a ZIP: the body becomes a canonical JSON archive object, an `ImportJob` with parser `qingyu_native`, then evidence after the worker runs. `POST /api/v1/ingest/messages:batch` accepts 1–100 messages in one job. `POST /api/v1/ingest/conversations` records an empty conversation. `GET /api/v1/ingest/requests/{client_request_id}` returns that client's row.
+
+The bearer token is not `API_TOKEN` and not `EVIDENCE_READ_API_TOKEN`. Configure `INGEST_CLIENTS` as `client_id:sha256(token)`. The process stores the hash. The client sends the raw token. A client may have more than one hash so one token can be rotated without removing the others.
+
+`client_request_id` is the caller's idempotency key. Reuse the same value on retry and after a restart. The gateway does not derive it from the body. `payload_hash` is only the check that a reused id still carries the same body: the same id with a different body is 409 `idempotency_key_reused` and does not write a second job. A different `client_request_id` is a new write even when the text matches. Sending the payload hash itself as `client_request_id` is rejected.
+
+A new id returns 202 while the worker has not finished (`status` is `processing`) and 200 with the evidence ids after it has. The same id and body return that same result. The API does not run the job. The worker still claims the job only after `manifests/<sha256>.json` exists.
+
+```bash
+curl -sS -X POST http://127.0.0.1:8000/api/v1/ingest/messages \
+  -H "Authorization: Bearer $INGEST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"client_request_id":"req-1","source_platform":"cursor","source_conversation_id":"conv-1","message":{"client_message_id":"msg-1","role":"user","content_text":"remember the backup window","content_kind":"conversation_message"}}'
+```
+
+`content_kind` is `conversation_message`, `client_generated_summary`, or `user_note`. A summary cannot use `role` `user`. The read APIs are unchanged: `evidence-query-v1` on the GET routes and `evidence-search-v1` on search. After the worker finishes, the new observation is visible there. Each write is an `append_delta` observation, not an edit of an older one.

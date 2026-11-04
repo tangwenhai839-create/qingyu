@@ -46,9 +46,11 @@ def _include_routers(application: FastAPI) -> None:
     from .api_export import archive_router as export_archive_router
     from .api_export import conversation_router as export_conversation_router
     from .api_import import router as import_router
+    from .api_ingest import router as ingest_router
 
     application.include_router(archive_router)
     application.include_router(import_router)
+    application.include_router(ingest_router)
     application.include_router(evidence_router)
     application.include_router(export_conversation_router)
     application.include_router(export_archive_router)
@@ -60,6 +62,7 @@ _include_routers(app)
 @app.middleware("http")
 async def evidence_response_cache_policy(request, call_next):
     is_evidence = request.url.path.startswith("/api/v1/evidence")
+    is_ingest = request.url.path.startswith("/api/v1/ingest")
     try:
         response = await call_next(request)
     except Exception as exc:
@@ -84,7 +87,7 @@ async def evidence_response_cache_policy(request, call_next):
                 }
             },
         )
-    if is_evidence:
+    if is_evidence or is_ingest:
         response.headers["Cache-Control"] = "private, no-store"
     return response
 
@@ -112,10 +115,16 @@ async def database_error_handler(request, exc):
 @app.exception_handler(RequestValidationError)
 async def search_validation_does_not_echo_the_query(request: Request, exc: RequestValidationError):
     """Search queries are private evidence. Do not copy the body into a 422."""
-    if request.url.path.rstrip("/") == "/api/v1/evidence/search":
+    path = request.url.path
+    if path.rstrip("/") == "/api/v1/evidence/search":
         return JSONResponse(
             status_code=422,
             content={"detail": {"code": "query_invalid"}},
+        )
+    if path.startswith("/api/v1/ingest"):
+        return JSONResponse(
+            status_code=422,
+            content={"detail": {"code": "ingest_request_invalid"}},
         )
     return await request_validation_exception_handler(request, exc)
 

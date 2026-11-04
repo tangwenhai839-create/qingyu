@@ -19,7 +19,16 @@ def _fingerprint_attachment_descriptor(attachment: ParsedAttachment | dict[str, 
     return descriptor
 
 
-def build_revision_payload(*, role, content_text, content_json, model, raw_timestamp, attachments=()):
+def build_revision_payload(
+    *,
+    role,
+    content_text,
+    content_json,
+    model,
+    raw_timestamp,
+    attachments=(),
+    semantic_evidence=None,
+):
     payload = {"role": role, "content_text": content_text, "content_json": content_json, "model": model, "raw_timestamp": raw_timestamp}
     normalized_attachments = sorted(
         (_fingerprint_attachment_descriptor(item) for item in attachments),
@@ -28,6 +37,10 @@ def build_revision_payload(*, role, content_text, content_json, model, raw_times
     # Omitting this key for an empty collection preserves the exact legacy payload.
     if normalized_attachments:
         payload["attachments"] = normalized_attachments
+    # Same rule: callers that do not pass semantic evidence keep the legacy digest.
+    # qingyu_native passes content_kind here so a summary and a message differ.
+    if semantic_evidence is not None:
+        payload["semantic_evidence"] = semantic_evidence
     return payload
 
 def canonical_revision_json(payload: dict[str, Any]) -> str:

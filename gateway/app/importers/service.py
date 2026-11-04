@@ -28,6 +28,7 @@ from ..models import (
 )
 from .attachments import AttachmentWork
 from .generic import GenericTreeParser
+from .native import NATIVE_OBSERVATION_FINGERPRINT_VERSION, parse_native_timestamp
 from .real_chatgpt import (
     FRAGMENT_FINGERPRINT_VERSION,
     OBSERVATION_FINGERPRINT_VERSION,
@@ -94,6 +95,7 @@ class ImportService:
                 health_check()
                 owned_job = ImportWorker(self.db).assert_ownership(job, lease_token)
                 attempt_number = int(owned_job.attempt_count)
+                append_delta = bool(getattr(parser, "append_delta", False))
                 real_export = parser.name == "chatgpt-export" and bool(parsed.nodes)
                 if any(message.attachments for message in parsed.messages) and attempt_number <= 0:
                     raise ValueError("invalid_attempt_number")
@@ -140,7 +142,7 @@ class ImportService:
                     conversation.title = parsed.title; report["conversations"]["changed"] += 1
                 else: report["conversations"]["existing"] += 1
                 resolved_nodes = {}
-                if real_export:
+                if real_export or append_delta:
                     for node in parsed.nodes:
                         entity = self.db.scalar(select(ConversationNode).where(
                             ConversationNode.conversation_id == conversation.id,
@@ -164,27 +166,55 @@ class ImportService:
                         message = Message(conversation_id=conversation.id, external_message_id=message_identity); self.db.add(message); self.db.flush(); report["messages"]["new"] += 1
                     elif existing_batch is None: report["messages"]["existing"] += 1
                     digest = compute_text_hash(item.content_text)
-                    semantic_fingerprint = compute_semantic_revision_fingerprint(item.semantic_evidence_json, SEMANTIC_FINGERPRINT_VERSION) if real_export else None
-                    fingerprint = semantic_fingerprint or compute_revision_fingerprint(role=item.role, content_text=item.content_text, content_json=item.content_json, model=item.model, raw_timestamp=item.raw_timestamp, attachments=item.attachments)
-                    revision_filter = MessageRevision.semantic_revision_fingerprint == semantic_fingerprint if real_export else MessageRevision.revision_fingerprint == fingerprint
+                    if append_delta:
+                        semantic_fingerprint = None
+                        fingerprint = compute_revision_fingerprint(
+                            role=item.role,
+                            content_text=item.content_text,
+                            content_json=item.content_json,
+                            model=item.model,
+                            raw_timestamp=item.raw_timestamp,
+                            attachments=item.attachments,
+                            semantic_evidence=item.semantic_evidence_json,
+                        )
+                        revision_filter = MessageRevision.revision_fingerprint == fingerprint
+                    else:
+                        semantic_fingerprint = compute_semantic_revision_fingerprint(item.semantic_evidence_json, SEMANTIC_FINGERPRINT_VERSION) if real_export else None
+                        fingerprint = semantic_fingerprint or compute_revision_fingerprint(role=item.role, content_text=item.content_text, content_json=item.content_json, model=item.model, raw_timestamp=item.raw_timestamp, attachments=item.attachments)
+                        revision_filter = MessageRevision.semantic_revision_fingerprint == semantic_fingerprint if real_export else MessageRevision.revision_fingerprint == fingerprint
                     revision = self.db.scalar(select(MessageRevision).where(MessageRevision.message_id == message.id, revision_filter))
                     if revision is None:
                         if existing_batch is not None:
                             raise BatchReplayIdentityError("batch_replay_revision_missing")
                         latest = self.db.scalar(select(MessageRevision).where(MessageRevision.message_id == message.id).order_by(MessageRevision.revision_no.desc()))
                         pointer = item.raw_json_pointer or f"/conversations/{conv_index}/mapping/{json_pointer_escape(item.node_id)}"
-                        raw_create = item.semantic_evidence_json.get("create_time") if real_export else None
-                        create_normalized, create_status = normalize_timestamp(raw_create) if real_export else (None, None)
-                        update_normalized, update_status = normalize_timestamp(item.raw_update_timestamp) if real_export else (None, None)
+                        if append_delta:
+                            raw_create = item.raw_timestamp
+                            create_normalized, create_status = parse_native_timestamp(item.raw_timestamp)
+                            update_normalized, update_status = None, None
+                            raw_update = None
+                            time_provenance = {"source": "client_declared", "precision": "client-declared"}
+                        elif real_export:
+                            raw_create = item.semantic_evidence_json.get("create_time")
+                            create_normalized, create_status = normalize_timestamp(raw_create)
+                            update_normalized, update_status = normalize_timestamp(item.raw_update_timestamp)
+                            raw_update = item.raw_update_timestamp
+                            time_provenance = {"source": "chatgpt-export", "precision": "source-declared"}
+                        else:
+                            raw_create = None
+                            create_normalized, create_status = None, None
+                            update_normalized, update_status = None, None
+                            raw_update = None
+                            time_provenance = None
                         revision = MessageRevision(
                             message_id=message.id, revision_no=(latest.revision_no + 1 if latest else 1),
                             role=item.role, content_text=item.content_text, content_json=item.content_json,
                             model=item.model, raw_timestamp=item.raw_timestamp,
                             normalized_timestamp=create_normalized, raw_create_time_json=raw_create,
-                            raw_update_time_json=item.raw_update_timestamp if real_export else None,
+                            raw_update_time_json=raw_update,
                             normalized_update_timestamp=update_normalized,
                             create_time_parse_status=create_status, update_time_parse_status=update_status,
-                            time_provenance_json={"source": "chatgpt-export", "precision": "source-declared"} if real_export else None,
+                            time_provenance_json=time_provenance,
                             content_type=item.content_type, semantic_evidence_json=item.semantic_evidence_json,
                             semantic_revision_fingerprint=semantic_fingerprint,
                             fingerprint_version=SEMANTIC_FINGERPRINT_VERSION if real_export else None,
@@ -195,14 +225,34 @@ class ImportService:
                     resolved[item.node_id], revisions[item.node_id] = message, revision
                 if existing_batch is None:
                     if not real_export:
-                        report["tree_anomalies"].extend(TreeValidator().validate(parsed.messages))
+                        anomalies = TreeValidator().validate(parsed.messages)
+                        if append_delta:
+                            for anomaly in anomalies:
+                                if anomaly.get("type") in {"missing_parent", "orphan"}:
+                                    report["unknown"].append({
+                                        "type": anomaly["type"],
+                                        "severity": "info",
+                                        "node_id": anomaly.get("node_id"),
+                                        "parent": anomaly.get("parent"),
+                                        "detail": "append_delta parent is outside this observation",
+                                    })
+                                else:
+                                    report["tree_anomalies"].append(anomaly)
+                        else:
+                            report["tree_anomalies"].extend(anomalies)
                     for order, item in enumerate(parsed.messages):
                         if self.db.scalar(select(MessageObservation).where(MessageObservation.import_job_id == job.id, MessageObservation.external_node_id == item.node_id, MessageObservation.message_revision_id == revisions[item.node_id].id)): continue
                         parent = resolved.get(item.parent_node_id)
                         pointer = item.raw_json_pointer or f"/conversations/{conv_index}/mapping/{json_pointer_escape(item.node_id)}"
-                        observation_fingerprint = compute_source_observation_fingerprint(item.observation_evidence_json, OBSERVATION_FINGERPRINT_VERSION) if real_export else None
+                        if real_export and item.observation_evidence_json is not None:
+                            observation_fingerprint = compute_source_observation_fingerprint(item.observation_evidence_json, OBSERVATION_FINGERPRINT_VERSION)
+                        elif append_delta and item.observation_evidence_json is not None:
+                            observation_fingerprint = compute_source_observation_fingerprint(item.observation_evidence_json, NATIVE_OBSERVATION_FINGERPRINT_VERSION)
+                        else:
+                            observation_fingerprint = None
+                        fragment_fingerprint = compute_canonical_fragment_fingerprint(item.source_fragment_json, pointer) if (real_export or append_delta) and item.source_fragment_json is not None else None
                         mapping_pointer = pointer[:-len("/message")] if real_export and pointer.endswith("/message") else pointer
-                        self.db.add(MessageObservation(import_job_id=job.id, message_id=resolved[item.node_id].id, message_revision_id=revisions[item.node_id].id, external_node_id=item.node_id, external_parent_node_id=item.parent_node_id, parent_message_id=parent.id if parent else None, branch_key=item.branch_key, is_current_path=item.node_id == parsed.current_node_id, observation_order=order, raw_mapping_pointer=mapping_pointer, raw_message_pointer=pointer if real_export else None, metadata_json={"archive_object_id": str(archive.id), "zip_member": source_member}, source_observation_json=item.observation_evidence_json if real_export else None, source_observation_fingerprint=observation_fingerprint, canonical_fragment_fingerprint=compute_canonical_fragment_fingerprint(item.source_fragment_json, pointer) if real_export else None, fragment_fingerprint_version=FRAGMENT_FINGERPRINT_VERSION if real_export else None))
+                        self.db.add(MessageObservation(import_job_id=job.id, message_id=resolved[item.node_id].id, message_revision_id=revisions[item.node_id].id, external_node_id=item.node_id, external_parent_node_id=item.parent_node_id, parent_message_id=parent.id if parent else None, branch_key=item.branch_key, is_current_path=item.node_id == parsed.current_node_id, observation_order=order, raw_mapping_pointer=mapping_pointer, raw_message_pointer=pointer if (real_export or append_delta) else None, metadata_json={"archive_object_id": str(archive.id), "zip_member": source_member}, source_observation_json=item.observation_evidence_json if (real_export or append_delta) else None, source_observation_fingerprint=observation_fingerprint, canonical_fragment_fingerprint=fragment_fingerprint, fragment_fingerprint_version=FRAGMENT_FINGERPRINT_VERSION if fragment_fingerprint is not None else None))
 
                 pending_archives = []
                 declared_work = []
@@ -254,6 +304,17 @@ class ImportService:
                             conversation=conversation,
                             parsed=parsed,
                             conversation_index=conv_index,
+                            archive_object_id=archive_object_id,
+                            source_member=source_member,
+                            resolved_nodes=resolved_nodes,
+                            resolved_messages=resolved,
+                            revisions=revisions,
+                        )
+                    if append_delta:
+                        self._persist_append_delta_snapshot(
+                            batch=batch,
+                            conversation=conversation,
+                            parsed=parsed,
                             archive_object_id=archive_object_id,
                             source_member=source_member,
                             resolved_nodes=resolved_nodes,
@@ -779,6 +840,98 @@ class ImportService:
         for availability in chosen_by_attachment.values():
             counts[availability] += 1
         return counts
+
+    def _persist_append_delta_snapshot(
+        self, *, batch, conversation, parsed, archive_object_id, source_member,
+        resolved_nodes, resolved_messages, revisions,
+    ):
+        """One new observation for this delta. It does not rewrite an older one."""
+        envelope = copy.deepcopy(parsed.source_conversation_json or {})
+        envelope["observation_scope"] = "append_delta"
+        envelope.setdefault("provenance", "client_declared")
+        pointer = parsed.raw_json_pointer or "/conversation"
+        create_normalized, create_status = parse_native_timestamp(
+            parsed.raw_create_timestamp if isinstance(parsed.raw_create_timestamp, str) else None
+        )
+        update_normalized, update_status = parse_native_timestamp(
+            parsed.raw_update_timestamp if isinstance(parsed.raw_update_timestamp, str) else None
+        )
+        current_external = parsed.current_node_id
+        current_entity = self._native_node(conversation.id, current_external, resolved_nodes)
+        if current_external is None:
+            current_status = "absent"
+            current_entity = None
+        elif current_entity is None:
+            current_status = "missing"
+        else:
+            current_status = "resolved"
+        observation = ConversationObservation(
+            import_batch_commit_id=batch.id,
+            conversation_id=conversation.id,
+            archive_object_id=archive_object_id,
+            source_member=source_member,
+            source_conversation_index=batch.sequence_no - 1,
+            raw_conversation_pointer=pointer,
+            external_current_node_id=current_external if current_status != "absent" else None,
+            current_conversation_node_id=current_entity.id if current_entity is not None and current_status == "resolved" else None,
+            current_node_status=current_status,
+            source_conversation_json=envelope,
+            raw_create_time_json=parsed.raw_create_timestamp,
+            raw_update_time_json=parsed.raw_update_timestamp,
+            normalized_created_at=create_normalized,
+            normalized_updated_at=update_normalized,
+            create_time_parse_status=create_status if create_status != "naive" else "invalid",
+            update_time_parse_status=update_status if update_status != "naive" else "invalid",
+            time_provenance_json={"source": "client_declared", "precision": "client-declared"},
+            source_observation_fingerprint=compute_source_observation_fingerprint(
+                envelope, NATIVE_OBSERVATION_FINGERPRINT_VERSION
+            ),
+            canonical_fragment_fingerprint=compute_canonical_fragment_fingerprint(
+                parsed.source_fragment_json if parsed.source_fragment_json is not None else envelope,
+                pointer,
+            ),
+            fragment_fingerprint_version=FRAGMENT_FINGERPRINT_VERSION,
+        )
+        self.db.add(observation)
+        self.db.flush()
+        for order, node in enumerate(parsed.nodes):
+            node_entity = resolved_nodes[node.node_id]
+            parent = self._native_node(conversation.id, node.parent_node_id, resolved_nodes)
+            message = resolved_messages.get(node.node_id)
+            revision = revisions.get(node.node_id)
+            self.db.add(MappingNodeObservation(
+                conversation_observation_id=observation.id,
+                conversation_id=conversation.id,
+                conversation_node_id=node_entity.id,
+                parent_conversation_node_id=parent.id if parent is not None else None,
+                external_parent_node_id=node.parent_node_id if parent is not None else None,
+                message_id=message.id if message is not None else None,
+                message_revision_id=revision.id if revision is not None else None,
+                message_presence=node.message_presence,
+                observation_order=order,
+                raw_mapping_pointer=node.raw_json_pointer,
+                declared_children_json=None,
+                source_node_json=node.source_node_json,
+                source_observation_fingerprint=compute_source_observation_fingerprint(
+                    node.source_node_json, NATIVE_OBSERVATION_FINGERPRINT_VERSION
+                ),
+                canonical_fragment_fingerprint=compute_canonical_fragment_fingerprint(
+                    node.source_fragment_json if node.source_fragment_json is not None else node.source_node_json,
+                    node.raw_json_pointer,
+                ),
+                fragment_fingerprint_version=FRAGMENT_FINGERPRINT_VERSION,
+            ))
+
+    def _native_node(self, conversation_id, external_id, resolved):
+        if not external_id:
+            return None
+        found = resolved.get(external_id)
+        if found is not None:
+            return found
+        return self.db.scalar(select(ConversationNode).where(
+            ConversationNode.conversation_id == conversation_id,
+            ConversationNode.external_node_id == external_id,
+        ))
 
 
 def json_pointer_escape(value: str) -> str:

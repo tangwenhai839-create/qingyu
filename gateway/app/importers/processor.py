@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import zipfile
 from pathlib import Path
@@ -83,6 +84,24 @@ class ImportProcessor:
                     expected_size=obj.size_bytes,
                     actual_size=actual_size,
                 )
+            if persisted_job.parser_name == "qingyu_native" and not zipfile.is_zipfile(verified_source):
+                outcome = self._import_native_document(
+                    verified_source,
+                    job,
+                    token,
+                    pinned_parser,
+                    health_check,
+                    persisted_job,
+                )
+                result = dict(outcome.report)
+                result["scan"] = {"format": "native_json"}
+                result["imported_messages"] = result.get("messages", {}).get("new", 0)
+                result["imported_conversations"] = result.get("conversations", {}).get("new", 0)
+                health_check()
+                if not worker.mark_completed(job_id, token, result, "imported", outcome.counts):
+                    raise LeaseLost("ownership_lost")
+                cleanup_completed = True
+                return result
             if not zipfile.is_zipfile(verified_source): raise UnsupportedStructure('unsupported_structure')
             extract_root = attempt / 'extracted'
             scan=safe_extract(verified_source, extract_root, self.limits)
@@ -215,6 +234,70 @@ class ImportProcessor:
                         operation="cleanup_terminal_staging",
                         exception=exc,
                     )
+
+    def _import_native_document(self, verified_source, job, token, pinned_parser, health_check, persisted_job):
+        """Import one canonical JSON archive. ZIP imports do not use this path.
+
+        ``job`` may be the worker claim, which has no parser columns. The
+        persisted row carries the parser identity chosen at ingest time.
+        """
+        source_member = "native.json"
+        payload = load_native_document(verified_source, source_member)
+        parser, unknown_fields = resolve_native_parser(
+            self.registry, persisted_job, pinned_parser, payload, source_member
+        )
+        health_check()
+        parsed_conversations = tuple(parser.parse(payload))
+        account = self.db.get(SourceAccount, job.source_account_id)
+        if account is None:
+            raise ValueError("invalid_source_account")
+        if payload.get("client_id") != account.account_label or payload.get("source_platform") != account.platform:
+            raise ParserValidationError([{
+                "type": "native_account_mismatch",
+                "raw_pointer": "",
+                "detail": "archived client does not match the import account",
+            }])
+        health_check()
+        return ImportService(self.db).import_fixture(
+            payload,
+            job.archive_object_id,
+            job=job,
+            lease_token=token,
+            source_member=source_member,
+            parser=parser,
+            unknown_entries=unknown_fields,
+            health_check=health_check,
+            parsed_conversations=parsed_conversations,
+            attachment_work={},
+            attachment_archive=ArchiveService(self.root, self.db),
+        )
+
+
+def load_native_document(path: Path, member: str = "native.json"):
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ParserValidationError([{
+            "type": "invalid_native_document",
+            "raw_pointer": "",
+            "detail": "utf-8 required",
+        }]) from exc
+    try:
+        return load_json_document(raw, member)
+    except json.JSONDecodeError as exc:
+        raise ParserValidationError([{
+            "type": "invalid_native_document",
+            "raw_pointer": "",
+            "detail": "json required",
+        }]) from exc
+
+
+def resolve_native_parser(registry, job, pinned, payload, member):
+    parser = pinned if pinned is not None else registry.resolve(job.parser_name, job.parser_version)
+    if parser is None or not parser.can_parse(payload):
+        raise UnsupportedStructure("unsupported_structure")
+    return parser, parser.validate(payload, member)
+
 
 class UnsupportedStructure(ValueError):
     def __init__(self, code: str):

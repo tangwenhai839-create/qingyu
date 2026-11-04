@@ -396,3 +396,49 @@ class MappingNodeObservation(Base):
     canonical_fragment_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     fragment_fingerprint_version: Mapped[str] = mapped_column(String(32), nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+
+
+class IngestRequest(Base):
+    """Idempotency ledger for one external write. Not a job queue.
+
+    Uniqueness is (client_id, client_request_id). payload_hash detects a
+    conflicting reuse of that id and is not itself an identifier.
+    """
+
+    __tablename__ = "ingest_requests"
+    __table_args__ = (
+        UniqueConstraint("client_id", "client_request_id", name="uq_ingest_requests_client_request"),
+        CheckConstraint(
+            "status IN ('archived','completed','failed')",
+            name="ck_ingest_requests_status",
+        ),
+        CheckConstraint(
+            "kind IN ('conversation','messages')",
+            name="ck_ingest_requests_kind",
+        ),
+        CheckConstraint(
+            "payload_hash ~ '^[0-9a-f]{64}$'",
+            name="ck_ingest_requests_payload_hash",
+        ),
+        CheckConstraint("length(btrim(client_id)) > 0", name="ck_ingest_requests_client_id_present"),
+        CheckConstraint(
+            "length(btrim(client_request_id)) > 0",
+            name="ck_ingest_requests_request_id_present",
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    client_id: Mapped[str] = mapped_column(Text, nullable=False)
+    client_request_id: Mapped[str] = mapped_column(Text, nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    archive_object_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("archive_objects.id"), nullable=True
+    )
+    import_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("import_jobs.id"), nullable=True, index=True
+    )
+    result_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
