@@ -346,6 +346,170 @@ def test_backup_restore_and_upgrade_round_trip(tmp_path: Path):
             assert (bad_root / relative).read_bytes() == b"different-bytes\n"
 
 
+def test_repair_manifests_then_backup_restore_and_evidence_verify(tmp_path: Path):
+    with _database() as (source_name, source_url):
+        _alembic(source_url, "head")
+        archive = tmp_path / "source-archive"
+        digest, relative = _install_object(source_url, archive, PAYLOAD)
+        _insert_archive_observation(source_url, digest)
+        manifest = archive / "manifests" / f"{digest}.json"
+        outside = tmp_path / "outside-manifest.json"
+        outside.write_text("keep-me", encoding="utf-8")
+        manifest.unlink()
+        manifest.symlink_to(outside)
+        code, _out, err, leaked = _run(
+            ["repair-manifests", "--expect-database", source_name, "--archive-root", str(archive)],
+            url=source_url,
+        )
+        assert code == 1
+        assert "unsafe manifest path" in err
+        assert leaked is False
+        assert outside.read_text(encoding="utf-8") == "keep-me"
+        manifest.unlink()
+
+        code, _out, err, _leaked = _run(
+            ["repair-manifests", "--expect-database", source_name, "--archive-root", str(archive)],
+            url=source_url,
+        )
+        assert code == 0, err
+        assert "wrote 1, kept 0" in err
+        repaired = json.loads(manifest.read_text(encoding="utf-8"))
+        assert repaired["manifest_version"] == 2
+        assert repaired["sha256"] == digest
+        assert repaired["size_bytes"] == len(PAYLOAD)
+        code, _out, err, _leaked = _run(
+            [
+                "verify",
+                "--evidence",
+                "--expect-database",
+                source_name,
+                "--archive-root",
+                str(archive),
+            ],
+            url=source_url,
+        )
+        assert code == 0, err
+        assert "evidence verified: 1 archive objects" in err
+
+        sentinel = f'{{"sha256": "{digest}", "kept": true}}\n'
+        manifest.write_text(sentinel, encoding="utf-8")
+        code, _out, err, _leaked = _run(
+            ["repair-manifests", "--expect-database", source_name, "--archive-root", str(archive)],
+            url=source_url,
+        )
+        assert code == 0, err
+        assert "wrote 0, kept 1" in err
+        assert manifest.read_text(encoding="utf-8") == sentinel
+        code, _out, err, _leaked = _run(
+            [
+                "verify",
+                "--evidence",
+                "--expect-database",
+                source_name,
+                "--archive-root",
+                str(archive),
+            ],
+            url=source_url,
+        )
+        assert code == 1
+        assert "archive manifest is incomplete" in err
+
+        manifest.unlink()
+        (archive / relative).write_bytes(b"tampered")
+        code, _out, err, _leaked = _run(
+            ["repair-manifests", "--expect-database", source_name, "--archive-root", str(archive)],
+            url=source_url,
+        )
+        assert code == 0, err
+        code, _out, err, _leaked = _run(
+            [
+                "verify",
+                "--evidence",
+                "--expect-database",
+                source_name,
+                "--archive-root",
+                str(archive),
+            ],
+            url=source_url,
+        )
+        assert code == 1
+        assert "do not match the database" in err
+        (archive / relative).write_bytes(PAYLOAD)
+
+        code, _out, err, _leaked = _run(
+            [
+                "verify",
+                "--evidence",
+                "--expect-database",
+                source_name,
+                "--archive-root",
+                str(archive),
+            ],
+            url=source_url,
+        )
+        assert code == 0, err
+
+        backup_dir = tmp_path / "after-repair"
+        code, _out, err, _leaked = _run(
+            ["backup", "--expect-database", source_name, "--archive-root", str(archive), "--dest", str(backup_dir)],
+            url=source_url,
+        )
+        assert code == 0, err
+        code, _out, err, _leaked = _run(["verify", "--source", str(backup_dir)])
+        assert code == 0, err
+
+        with _database() as (restored_name, restored_url):
+            restored_root = tmp_path / "restored-archive"
+            restored_root.mkdir()
+            code, _out, err, _leaked = _run(
+                [
+                    "restore",
+                    "--expect-database",
+                    restored_name,
+                    "--archive-root",
+                    str(restored_root),
+                    "--source",
+                    str(backup_dir),
+                ],
+                url=restored_url,
+            )
+            assert code == 0, err
+            code, _out, err, _leaked = _run(["verify", "--source", str(backup_dir)])
+            assert code == 0, err
+            code, _out, err, _leaked = _run(
+                [
+                    "verify",
+                    "--evidence",
+                    "--expect-database",
+                    restored_name,
+                    "--archive-root",
+                    str(restored_root),
+                ],
+                url=restored_url,
+            )
+            assert code == 0, err
+            assert (restored_root / "manifests" / f"{digest}.json").is_file()
+            assert hashlib.sha256((restored_root / relative).read_bytes()).hexdigest() == digest
+
+
+def _insert_archive_observation(url: str, digest: str) -> None:
+    engine = create_engine(url)
+    try:
+        with engine.begin() as conn:
+            inserted = conn.execute(
+                text(
+                    "INSERT INTO archive_observations "
+                    "(id, archive_object_id, source_platform, original_filename) "
+                    "SELECT CAST(:id AS uuid), id, 'local', 'notes.txt' "
+                    "FROM archive_objects WHERE sha256 = :sha"
+                ),
+                {"id": str(uuid.uuid4()), "sha": digest},
+            ).rowcount
+    finally:
+        engine.dispose()
+    assert inserted == 1
+
+
 def _run(args: list[str], *, url: str | None = None):
     env = os.environ.copy()
     env["APP_ENV"] = "test"

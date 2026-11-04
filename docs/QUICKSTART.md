@@ -40,7 +40,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 `docker compose up -d db` is the default path to PostgreSQL 16. If Docker is unavailable, any PostgreSQL 16 works: point `DATABASE_URL` at that server (host, port, user, database, and password), for example `postgresql+psycopg://<user>:<password>@<host>:<port>/<db>`, then run `alembic upgrade head` and uvicorn the same way. Skip `docker compose up -d db` in that case.
 
-Imports do not finish inside the API process. `gateway/docker-compose.yml` defines `db` and `app` only. It has no worker service, so Compose does not start one. The worker must run as a separate process. In a second terminal, from the same `gateway/` directory and virtualenv, start it. It claims `pending` jobs and deletes expired staging:
+Imports do not finish inside the API process. A host-run API does not start the worker. In a second terminal, from the same `gateway/` directory and virtualenv, start it. It claims `pending` jobs whose archive manifest is already a regular file, and it deletes expired staging:
 
 ```bash
 cd /path/to/qingyu/gateway
@@ -48,7 +48,7 @@ cd /path/to/qingyu/gateway
 python -m app.importers.worker_runtime
 ```
 
-Leave both processes running. A job stays `pending` until the worker claims it.
+Leave both processes running. A job stays `pending` until that worker claims it. On startup the worker writes archive manifests that are missing (`IMPORT_WORKER_REPAIR_MANIFESTS=0` skips that pass). It does not replace a manifest file that is already there, and it does not claim a job until `manifests/<sha256>.json` exists.
 
 The Gateway process reads `gateway/.env` itself. The curls below read tokens from the shell, so export the same values:
 
@@ -88,29 +88,19 @@ A missing or wrong operator token on that route is 401 with `{"detail": "Invalid
 
 ### Docker Compose instead of a host process
 
-From `gateway/`, with the same `.env` filled in, `docker compose up -d --build` waits for PostgreSQL, runs `alembic upgrade head` inside the app container, and publishes the API on `127.0.0.1:8000`. Leave `DATABASE_URL` on `127.0.0.1`; the app service builds its own URL. `POSTGRES_PASSWORD` must be URL-safe for that service (letters, digits, hyphen, underscore). Compose has no worker service, so the import worker is still a separate process. It has to see the same archive volume:
+From `gateway/`, with the same `.env` filled in, `docker compose up -d --build` waits for PostgreSQL, runs `alembic upgrade head` inside the app container, publishes the API on `127.0.0.1:8000`, and starts the `worker` service. The worker uses the same image as the API and the same `archive_data` volume (`ARCHIVE_ROOT=/data`). An import finishes without a second terminal. Leave `DATABASE_URL` on `127.0.0.1`; the app and worker services build their own URL. `POSTGRES_PASSWORD` must be URL-safe for those services (letters, digits, hyphen, underscore).
 
-```bash
-docker compose run --rm app python -m app.importers.worker_runtime
-```
-
-The curls in the next sections are the same.
+`docker compose up -d db` still starts only PostgreSQL, for the host-run steps above. The curls in the next sections are the same.
 
 ## 2. Upload a ChatGPT export
 
-The worker must be running as its own process before this upload. Compose has no worker service (`db` and `app` only), so neither `docker compose up -d db` nor `docker compose up -d --build` starts it. From `gateway/`, with the same virtualenv and `.env` as the API:
+When the API is `docker compose up -d --build`, the worker is already running. When the API is host-run uvicorn, start the worker first and leave it running:
 
 ```bash
 python -m app.importers.worker_runtime
 ```
 
-When the API is the Compose `app` service, run the same module in that image so it sees the archive volume:
-
-```bash
-docker compose run --rm app python -m app.importers.worker_runtime
-```
-
-Leave that process running. The 202 below stays `pending` until the worker claims the job.
+The 202 below stays `pending` until the worker claims the job. The worker waits until the archive manifest file exists, so a crash between the database commit and that file is recovered by the startup repair pass or by `python -m scripts.maintenance repair-manifests`.
 
 `POST /api/v1/import/chatgpt` accepts the zip as multipart field `file` and returns 202. The router is mounted at `/api/v1` and depends on `require_token`, so the call needs the operator bearer token. `EVIDENCE_READ_API_TOKEN` is not enough.
 

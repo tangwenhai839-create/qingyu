@@ -14,7 +14,7 @@ Start PostgreSQL from `gateway/`:
 docker compose up -d db
 ```
 
-`gateway/docker-compose.yml` defines `db` (the `postgres:16` image) and `app` (the Gateway image). `db` creates database `qingyu` and user `qingyu`. `POSTGRES_PASSWORD` must be set or Compose refuses to start. The published Postgres port is `127.0.0.1:5432:5432`. The named volume `qingyu_postgres` is mounted at `/var/lib/postgresql/data` inside the container. `docker compose up -d db` starts only PostgreSQL. `docker compose up -d --build` also builds and starts the Gateway; see `gateway/README.md`.
+`gateway/docker-compose.yml` defines `db` (the `postgres:16` image), `app` (the Gateway image), and `worker` (the same image, `python -m app.importers.worker_runtime`). `db` creates database `qingyu` and user `qingyu`. `POSTGRES_PASSWORD` must be set or Compose refuses to start. The published Postgres port is `127.0.0.1:5432:5432`. The named volume `qingyu_postgres` is mounted at `/var/lib/postgresql/data` inside the container. `docker compose up -d db` starts only PostgreSQL. `docker compose up -d --build` builds the image, starts the Gateway, and starts the worker on the shared `archive_data` volume, so imports finish without a second terminal. See `gateway/README.md`.
 
 Apply the schema from `gateway/`, with `DATABASE_URL` pointing at that database:
 
@@ -32,13 +32,13 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 `HOST` and `PORT` in `.env.example` are settings fields. The startup log prints them. uvicorn does not bind those values; the listen address is the `--host` and `--port` you pass on the command line. Keep that on `127.0.0.1` unless you have another way to stop the port being reachable from the network. The Compose `app` service binds `0.0.0.0:8000` inside the container and publishes `127.0.0.1:8000`.
 
-Imports do not finish inside the API process. A second process, started from the same directory and the same environment, claims jobs and deletes expired staging:
+Imports do not finish inside the API process. Compose starts the worker with the API. A host-run API needs a second process, started from the same directory and the same environment. It claims jobs whose manifest file is already present, and it deletes expired staging:
 
 ```bash
 python -m app.importers.worker_runtime
 ```
 
-Its defaults are `IMPORT_WORKER_POLL_SECONDS=1`, `IMPORT_WORKER_HEARTBEAT_SECONDS=10`, and `IMPORT_WORKER_LEASE_SECONDS=30`. Staging retention uses `STAGING_FAILED_RETENTION_DAYS` (7), `STAGING_CLEANUP_INTERVAL_SECONDS` (300), and `STAGING_CLEANUP_MAX_CANDIDATES` (100). Settings are read when each process starts. Changing `.env` has no effect until that process is restarted.
+Its defaults are `IMPORT_WORKER_POLL_SECONDS=1`, `IMPORT_WORKER_HEARTBEAT_SECONDS=10`, and `IMPORT_WORKER_LEASE_SECONDS=30`. `IMPORT_WORKER_REPAIR_MANIFESTS` defaults to on: one pass at startup writes manifest files that are missing and leaves existing regular files alone. Set it to `0` to skip that pass. The same fill is `python -m scripts.maintenance repair-manifests`. Staging retention uses `STAGING_FAILED_RETENTION_DAYS` (7), `STAGING_CLEANUP_INTERVAL_SECONDS` (300), and `STAGING_CLEANUP_MAX_CANDIDATES` (100). Settings are read when each process starts. Changing `.env` has no effect until that process is restarted.
 
 `GET /health` does not require a token and does not check the database. `GET /health/ready` does not require a token; it returns 200 after `SELECT 1` and 503 when the database does not answer. Neither is an authorization boundary.
 
@@ -124,7 +124,7 @@ Access logs are one line per request from the logger `qingyu.access`: method, pa
 
 Back up three things together: a logical dump of database `qingyu`, `archive/objects/`, and `manifests/`. Do not treat `staging/` or a file copy of the running PostgreSQL data directory as that backup.
 
-The supported v0.1 tool is `python -m scripts.maintenance` (run from `gateway/` with `DATABASE_URL` in the environment): `backup`, `verify`, `restore` (only into a new empty database and archive root), and `upgrade` (forward-only, optionally taking a backup first). See `gateway/docs/BACKUP_RESTORE_AND_UPGRADE.md`.
+The supported v0.1 tool is `python -m scripts.maintenance` (run from `gateway/` with `DATABASE_URL` in the environment): `backup`, `verify`, `verify --evidence`, `repair-manifests`, `restore` (only into a new empty database and archive root), and `upgrade` (forward-only, optionally taking a backup first). See `gateway/docs/BACKUP_RESTORE_AND_UPGRADE.md`.
 
 The Phase 3 sample-acceptance procedure is separate:
 

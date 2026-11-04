@@ -8,7 +8,7 @@ from pathlib import Path
 from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from ..archive.manifest import sync_manifest_from_archive_object
+from ..archive.manifest import manifest_is_finalized, sync_manifest_from_archive_object
 from ..models import ArchiveObject, AttachmentObservation, ImportBatchCommit, ImportJob
 from .report import empty_report
 from .staging import job_attempt_path
@@ -89,18 +89,67 @@ class ImportWorker:
             owned.report_json = snapshot.report
             apply_durable_counts(owned, snapshot)
             return True
-    def claim_next(self, lease_duration: int = 300) -> ClaimedJob | None:
-        job = self.db.scalar(
-            select(ImportJob)
-            .where(
-                ImportJob.status == PENDING,
-                ImportJob.attempt_count < ImportJob.max_attempts,
+    def claim_next(self, lease_duration: int = 300, *, archive_root: Path | None = None) -> ClaimedJob | None:
+        # Callers that do not pass archive_root keep the historical claim.
+        # The worker runtime always passes it so a job committed before
+        # manifest finalize is not eligible yet.
+        if archive_root is None:
+            job = self.db.scalar(
+                select(ImportJob)
+                .where(
+                    ImportJob.status == PENDING,
+                    ImportJob.attempt_count < ImportJob.max_attempts,
+                )
+                .order_by(ImportJob.created_at)
+                .limit(1)
+                .with_for_update(skip_locked=True)
             )
-            .order_by(ImportJob.created_at)
-            .limit(1)
-            .with_for_update(skip_locked=True)
-        )
-        if job is None: return None
+            if job is None:
+                return None
+            return self._activate_claim(job, lease_duration)
+
+        page_size = 100
+        offset = 0
+        while True:
+            rows = self.db.execute(
+                select(ImportJob.id, ArchiveObject.sha256)
+                .join(ArchiveObject, ArchiveObject.id == ImportJob.archive_object_id)
+                .where(
+                    ImportJob.status == PENDING,
+                    ImportJob.attempt_count < ImportJob.max_attempts,
+                )
+                .order_by(ImportJob.created_at, ImportJob.id)
+                .offset(offset)
+                .limit(page_size)
+            ).all()
+            if not rows:
+                return None
+            for job_id, sha256 in rows:
+                if not manifest_is_finalized(archive_root, sha256):
+                    continue
+                job = self.db.scalar(
+                    select(ImportJob)
+                    .where(
+                        ImportJob.id == job_id,
+                        ImportJob.status == PENDING,
+                        ImportJob.attempt_count < ImportJob.max_attempts,
+                    )
+                    .with_for_update(skip_locked=True)
+                )
+                if job is None:
+                    continue
+                current_sha = self.db.scalar(
+                    select(ArchiveObject.sha256).where(ArchiveObject.id == job.archive_object_id)
+                )
+                if not manifest_is_finalized(archive_root, current_sha):
+                    self.db.rollback()
+                    continue
+                return self._activate_claim(job, lease_duration)
+            if len(rows) < page_size:
+                return None
+            offset += page_size
+
+    def _activate_claim(self, job, lease_duration: int) -> ClaimedJob:
         now = datetime.now(UTC)
         token = uuid.uuid4()
         job.status = RUNNING; job.started_at = job.started_at or now; job.first_started_at = job.first_started_at or now; job.last_attempt_started_at = now; job.attempt_count += 1; job.last_heartbeat_at = now; job.lease_expires_at = now + timedelta(seconds=lease_duration); job.lease_token = token

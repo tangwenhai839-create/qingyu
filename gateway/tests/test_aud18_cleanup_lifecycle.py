@@ -13,6 +13,7 @@ from pathlib import Path
 import app.importers.cleanup as cleanup_module
 import app.importers.processor as processor_module
 import pytest
+from app.archive.manifest import sync_manifest_from_archive_object
 from app.db import engine
 from app.importers.cleanup import cleanup_failed_staging
 from app.importers.worker import ImportWorker
@@ -301,7 +302,7 @@ def test_cleanup_cannot_delete_attempt_while_processor_is_copying(tmp_path,monke
     with zipfile.ZipFile(source,'w') as archive: archive.writestr('fixture.json',json.dumps(payload))
     content=source.read_bytes(); digest=hashlib.sha256(content).hexdigest(); target=root/'archive'/'objects'/digest[:2]/digest; target.parent.mkdir(parents=True); target.write_bytes(content)
     with Session(engine) as db:
-        _clear(db); account=SourceAccount(platform='cleanup-runtime',account_label=str(uuid.uuid4()),metadata_json={}); archive=ArchiveObject(sha256=digest,size_bytes=len(content),relative_path=target.relative_to(root).as_posix(),media_type='application/zip',integrity_status='verified',metadata_json={}); db.add_all([account,archive]); db.flush(); job=ImportJob(source_account_id=account.id,archive_object_id=archive.id,parser_name='fixture',parser_version='1',status='pending',report_json={}); db.add(job); db.commit(); job_id=job.id
+        _clear(db); account=SourceAccount(platform='cleanup-runtime',account_label=str(uuid.uuid4()),metadata_json={}); archive=ArchiveObject(sha256=digest,size_bytes=len(content),relative_path=target.relative_to(root).as_posix(),media_type='application/zip',integrity_status='verified',metadata_json={}); db.add_all([account,archive]); db.flush(); sync_manifest_from_archive_object(root, archive); job=ImportJob(source_account_id=account.id,archive_object_id=archive.id,parser_name='fixture',parser_version='1',status='pending',report_json={}); db.add(job); db.commit(); job_id=job.id
     entered=threading.Event(); release=threading.Event(); original=processor_module.copy_and_verify_archive
     def paused_copy(*args):
         result=original(*args); entered.set(); assert release.wait(2); return result

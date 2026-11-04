@@ -1,6 +1,6 @@
 # Qingyu Memory Gateway
 
-Phase 1 foundation. PostgreSQL 16 is the database. Compose can start the database alone, or the database and the Gateway together.
+Phase 1 foundation. PostgreSQL 16 is the database. Compose can start the database alone, or the database, the Gateway, and the import worker together.
 
 ### Docker (compose)
 
@@ -20,15 +20,11 @@ curl -fsS http://127.0.0.1:8000/health
 curl -fsS http://127.0.0.1:8000/health/ready
 ```
 
-Compose waits until PostgreSQL is healthy, runs `alembic upgrade head`, then starts uvicorn. The Gateway is published on `127.0.0.1:8000`. A blank `API_TOKEN`, `EVIDENCE_READ_API_TOKEN`, `EVIDENCE_CURSOR_SIGNING_KEY`, or `POSTGRES_PASSWORD` makes Compose refuse to start. `/health` does not check the database. `/health/ready` returns 200 after `SELECT 1` and 503 when the database does not answer.
+Compose waits until PostgreSQL is healthy, runs `alembic upgrade head`, then starts uvicorn and the import worker. The Gateway is published on `127.0.0.1:8000`. A blank `API_TOKEN`, `EVIDENCE_READ_API_TOKEN`, `EVIDENCE_CURSOR_SIGNING_KEY`, or `POSTGRES_PASSWORD` makes Compose refuse to start. `/health` does not check the database. `/health/ready` returns 200 after `SELECT 1` and 503 when the database does not answer.
 
-Imports do not finish inside the API process. Run the worker in the same image so it sees `/data` and host `db`:
+Imports do not finish inside the API process. The `worker` service is the same image, command `python -m app.importers.worker_runtime`, and it mounts the same `archive_data` volume at `/data`. `docker compose up -d --build` starts that process with the API, so an import completes without a second terminal. The worker claims a job only after `manifests/<sha256>.json` is a regular file. On startup it fills manifest files that are missing (`IMPORT_WORKER_REPAIR_MANIFESTS=0` skips that pass) and does not overwrite one that is already there.
 
-```bash
-docker compose run --rm app python -m app.importers.worker_runtime
-```
-
-`docker compose up -d db` still starts only PostgreSQL, which is what the host-run steps below use.
+`docker compose up -d db` still starts only PostgreSQL, which is what the host-run steps below use. A host-run uvicorn process does not start the worker; run `python -m app.importers.worker_runtime` in another terminal for that layout.
 
 ### Linux / macOS (bash)
 
@@ -84,7 +80,7 @@ Non-upload request bodies are limited to `REQUEST_BODY_MAX_BYTES` (default 1 MiB
 
 ## Backup, restore, and upgrade
 
-From this directory, `python -m scripts.maintenance` takes a logical backup, restores it into a new database, or applies forward-only Alembic upgrades. `staging/` is not part of a backup, and downgrade is not a supported operation. See [docs/BACKUP_RESTORE_AND_UPGRADE.md](docs/BACKUP_RESTORE_AND_UPGRADE.md). [docs/BACKUP_RESTORE_RUNBOOK.md](docs/BACKUP_RESTORE_RUNBOOK.md) is the separate Phase 3 sample-acceptance procedure.
+From this directory, `python -m scripts.maintenance` takes a logical backup, restores it into a new database, applies forward-only Alembic upgrades, fills missing archive manifests (`repair-manifests`), or checks a live database with `verify --evidence`. `staging/` is not part of a backup, and downgrade is not a supported operation. See [docs/BACKUP_RESTORE_AND_UPGRADE.md](docs/BACKUP_RESTORE_AND_UPGRADE.md). [docs/BACKUP_RESTORE_RUNBOOK.md](docs/BACKUP_RESTORE_RUNBOOK.md) is the separate Phase 3 sample-acceptance procedure.
 
 Deployment of this process, the import worker, PostgreSQL, and the archive directory is described in [../docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).
 

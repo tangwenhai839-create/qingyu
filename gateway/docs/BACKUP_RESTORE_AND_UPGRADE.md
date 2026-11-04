@@ -54,7 +54,24 @@ Check a backup without restoring it:
 python -m scripts.maintenance verify --source /var/backups/qingyu/2026-10-24
 ```
 
-`verify` recomputes the inventory hash and every file hash, rejects unexpected files and symlinks, and runs `pg_restore --list` on the dump. It does not connect to a database.
+`verify --source` recomputes the inventory hash and every file hash, rejects unexpected files and symlinks, and runs `pg_restore --list` on the dump. It does not connect to a database.
+
+`verify --evidence` checks a live database and archive root. It does not read a backup directory. Every `archive_observations`, `conversation_observations`, `attachment_observations`, and `message_revisions` archive-object reference must resolve. Every `archive_objects` file must match the row's size and SHA-256. Every object must have a regular `manifests/<sha256>.json` whose identity fields match that row (`manifest_version` 2, object id, both hashes, size, path, media type, and integrity fields). `ingest_requests` is not part of this check. The command expects the current Gateway schema. It may target the long-term database.
+
+## Repair missing manifests
+
+`finalize` writes `manifests/<sha256>.json` after the archive row commits. A crash in that gap leaves the row and the object bytes without a manifest file. `verify --evidence` then fails, and the import worker will not claim a job for that object until the file exists.
+
+```bash
+export DATABASE_URL="postgresql+psycopg://qingyu:<password>@127.0.0.1:5432/qingyu"
+python -m scripts.maintenance repair-manifests \
+  --expect-database qingyu \
+  --archive-root /var/lib/qingyu/archive
+```
+
+The command reads committed `archive_objects` rows and calls the same manifest writer the archive service uses. It creates a file only when `manifests/<sha256>.json` is absent. An existing regular file is left unchanged, including a file that is incomplete or does not match the row. Delete that file and run the command again to regenerate it from the database. A symlink or other non-regular path is refused and is not replaced. The worker can run this fill once at startup (`IMPORT_WORKER_REPAIR_MANIFESTS`, on by default).
+
+After a repair, `verify --evidence` should pass. A later `backup` then `restore` into a new database and empty archive root keeps the repaired manifest, and `verify --evidence` against that restored copy should pass too.
 
 ## Restore
 

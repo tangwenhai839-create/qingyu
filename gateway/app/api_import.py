@@ -87,6 +87,9 @@ def create_import(
         except Exception:
             db.rollback()
             raise
+        # The job row is visible as soon as this commit lands. finalize()
+        # publishes manifests/<sha>.json afterwards. Workers skip a pending
+        # job until that regular file exists, so the gap is not claimable.
         archive.finalize(pending_archive)
         return {"import_job_id": str(job_id)}
     finally:

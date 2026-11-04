@@ -6,7 +6,7 @@ Issue #19 is the Claude conversation importer. It is not implemented here. Open 
 
 ## Pipeline
 
-`POST /api/v1/import/chatgpt` accepts one multipart file. The name must end in `.zip` (otherwise 415). The form field `source_platform` defaults to `chatgpt`. The route requires the operator bearer token from `require_token`. The handler returns 202 and `{"import_job_id": "<uuid>"}`. It does not parse the export. Parsing runs in a separate process, `python -m app.importers.worker_runtime`.
+`POST /api/v1/import/chatgpt` accepts one multipart file. The name must end in `.zip` (otherwise 415). The form field `source_platform` defaults to `chatgpt`. The route requires the operator bearer token from `require_token`. The handler returns 202 and `{"import_job_id": "<uuid>"}`. It does not parse the export. Parsing runs in a separate process, `python -m app.importers.worker_runtime`. Compose starts that process as the `worker` service. A host-run API still starts it separately. The worker does not claim the job until the archive manifest file exists.
 
 The request writes the upload under `<ARCHIVE_ROOT>/staging/uploads/<generation>/payload`, then calls `ArchiveService.prepare`. That copies the bytes to a generation under `staging/archive-prepared`, hashes them with SHA-256, and hardlinks the file to `archive/objects/<first two hex digits>/<sha256>`. `prepare` does not read or write the database. Both staging generations are removed when the request finishes. A failed removal is logged. It does not roll back an archive object that was already published.
 
