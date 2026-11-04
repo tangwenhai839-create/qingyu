@@ -391,7 +391,7 @@ def test_repair_manifests_then_backup_restore_and_evidence_verify(tmp_path: Path
         assert code == 0, err
         assert "evidence verified: 1 archive objects" in err
 
-        sentinel = '{"sha256": "%s", "kept": true}\n' % digest
+        sentinel = f'{{"sha256": "{digest}", "kept": true}}\n'
         manifest.write_text(sentinel, encoding="utf-8")
         code, _out, err, _leaked = _run(
             ["repair-manifests", "--expect-database", source_name, "--archive-root", str(archive)],
