@@ -88,7 +88,17 @@ jobs:
             sudo apt-get update
           fi
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-client-16
+          # postgresql-common puts a dispatcher on PATH. The 16.x binaries live here.
+          /usr/lib/postgresql/16/bin/pg_dump --version | grep -q 'PostgreSQL) 16\.'
+          /usr/lib/postgresql/16/bin/pg_restore --version | grep -q 'PostgreSQL) 16\.'
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+      - name: PostgreSQL 16 client is first on PATH
+        run: |
+          set -euo pipefail
+          test "$(command -v pg_dump)" = /usr/lib/postgresql/16/bin/pg_dump
+          test "$(command -v pg_restore)" = /usr/lib/postgresql/16/bin/pg_restore
           pg_dump --version | grep -q 'PostgreSQL) 16\.'
+          pg_restore --version | grep -q 'PostgreSQL) 16\.'
       - run: alembic upgrade head
       - run: pytest -q
 
