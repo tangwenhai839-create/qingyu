@@ -52,3 +52,10 @@ The extension's pagination guarantee is bounded high-water keyset enumeration,
 not a database snapshot. Consumers periodically rescan from the first page and
 deduplicate immutable observation identifiers so concurrently late commits are
 eventually discovered.
+
+## Frozen Maintenance Amendment #2
+
+`GATEWAY_FROZEN_MAINTENANCE_AMENDMENT_2.md` adds read-only
+`POST /api/v1/evidence/search`. Retrieval is a PostgreSQL bigram GIN index over
+committed message text. The endpoint does not change `evidence-query-v1`, add an
+evidence or source table, or open an ingest path.

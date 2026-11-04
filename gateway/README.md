@@ -58,6 +58,10 @@ docker compose up -d db
 
 > **Note**: For any `APP_ENV` other than `test`, Gateway requires three distinct, non-example secrets (`API_TOKEN`, `EVIDENCE_READ_API_TOKEN`, and `EVIDENCE_CURSOR_SIGNING_KEY`) and `DATABASE_URL`; see `gateway/app/config.py` and `gateway/.env.example`. Startup logs one redacted line (environment, listen address, archive root, database host, and whether each secret is set). It does not log secret values.
 
+## Search
+
+`POST /api/v1/evidence/search` (evidence-read token or API token) is a read-only substring search. Two-character Chinese queries use the bigram GIN index on `message_revisions.content_text`, not `pg_trgm`. The response contract is `evidence-search-v1`. The three GET evidence routes stay `evidence-query-v1`. See [../docs/QUICKSTART.md](../docs/QUICKSTART.md) and [docs/GATEWAY_FROZEN_MAINTENANCE_AMENDMENT_2.md](docs/GATEWAY_FROZEN_MAINTENANCE_AMENDMENT_2.md).
+
 ## Export
 
 `GET /api/v1/export/conversations/{conversation_id}` (evidence-read token or API token) and `GET /api/v1/export/archive` (API token only) return a zip bundle with a SHA-256 manifest. Both are read-only: they do not update or delete evidence. See [`docs/EXPORT_BUNDLE.md`](docs/EXPORT_BUNDLE.md).

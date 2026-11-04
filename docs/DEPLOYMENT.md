@@ -65,7 +65,7 @@ On a host-run process, `ARCHIVE_ROOT` is a directory on the host. `.env.example`
 For any `APP_ENV` other than `test`, startup requires three different values that are not empty and not one of `changeme`, `example`, `change-this-local-token`, or `change-me`:
 
 - `API_TOKEN` — bearer token for import, archive, and other operator routes
-- `EVIDENCE_READ_API_TOKEN` — bearer token for `GET /api/v1/evidence/...` and `GET /api/v1/export/conversations/{id}` only. It cannot call import, archive, the full archive export, or `/api/v1/protected-ping`. The operator token can also read and export evidence.
+- `EVIDENCE_READ_API_TOKEN` — bearer token for `/api/v1/evidence/...` (including `POST /api/v1/evidence/search`) and `GET /api/v1/export/conversations/{id}` only. It cannot call import, archive, the full archive export, or `/api/v1/protected-ping`. The operator token can also read and export evidence.
 - `EVIDENCE_CURSOR_SIGNING_KEY` — HMAC key for evidence cursors. It is not accepted as a bearer token. Replacing it makes existing cursors fail and does not change evidence rows.
 
 Bearer checks use `secrets.compare_digest` against every active token. `API_TOKENS` and `EVIDENCE_READ_API_TOKENS` are optional comma-separated extra tokens accepted alongside the primaries, so a token can be rotated by overlap; see “Rotating access tokens” in `gateway/README.md`. Do not run a real process with `APP_ENV=test`; that setting skips these checks. Generate values with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
@@ -115,6 +115,8 @@ List only hops you operate. Trusting `0.0.0.0/0` or a network that clients can c
 Every HTTP response carries `X-Request-ID`. A single incoming value of 1–128 characters from `[A-Za-z0-9._-]` is echoed. A missing, repeated, or otherwise unusable value is replaced with a new id, so a client cannot put a line break or a space into the log. The same id is included on log records emitted while the request is handled, and on the `request_id` field of the JSON error bodies the API already returns.
 
 Access logs are one line per request from the logger `qingyu.access`: method, path, status, duration, request id, and the direct peer address. The path has no query string. Headers, bearer tokens, and request or response bodies are not written. `/health` is included.
+
+`POST /api/v1/evidence/search` puts the query in the JSON body so it is not part of the URL. Do not log request bodies at the reverse proxy. If PostgreSQL statement logging is enabled, set `log_parameter_max_length=0` so the query text is not written as a bound parameter. The search index is the bigram GIN index from migration `0017_evidence_search_bigram`. It does not require `pg_trgm`.
 
 `GET /metrics` returns Prometheus text (`text/plain; version=0.0.4`). It is not in the OpenAPI schema and it responds 404 until `METRICS_ENABLED=true`. The series are `qingyu_http_requests_total` and `qingyu_http_request_duration_seconds` (a histogram), both labeled with the route template and the status code. Unmatched paths use the label `unmatched`, so a scan of random URLs does not create a series per path. The numbers belong to this process only; a second worker or a second uvicorn process has its own.
 

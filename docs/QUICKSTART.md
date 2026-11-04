@@ -22,7 +22,7 @@ Edit `gateway/.env` before the processes start:
 
 - `POSTGRES_PASSWORD`, and the same password in the host `DATABASE_URL` (`postgresql+psycopg://qingyu:<password>@127.0.0.1:5432/qingyu`). Percent-encode `@`, `:`, `/`, and `%` in that URL.
 - `API_TOKEN` — operator bearer token. Import and retry routes accept this token (or an entry in `API_TOKENS`).
-- `EVIDENCE_READ_API_TOKEN` — read bearer token for `GET /api/v1/evidence/...`. The operator token is also accepted there. Import routes reject the read token.
+- `EVIDENCE_READ_API_TOKEN` — read bearer token for `/api/v1/evidence/...`, including `POST /api/v1/evidence/search`. The operator token is also accepted there. Import routes reject the read token.
 - `EVIDENCE_CURSOR_SIGNING_KEY` — HMAC key for evidence cursors. It is not a bearer token.
 - `ARCHIVE_ROOT` — a writable absolute directory. Replace the `<repo>/data` placeholder. The API and the worker must use the same directory.
 
@@ -273,3 +273,46 @@ curl -sS -H "Authorization: Bearer $EVIDENCE_READ_API_TOKEN" \
 ```
 
 Open `http://127.0.0.1:8000/docs` for the OpenAPI UI served by the same process.
+
+## 5. Search message text
+
+`POST /api/v1/evidence/search` is a read-only substring search over committed message text. It accepts the same tokens as the GET evidence routes: `EVIDENCE_READ_API_TOKEN` or the operator token. It does not write a row. The query is a JSON field, not a URL parameter. Access logs record the path and not the body.
+
+`alembic upgrade head` creates `public.qingyu_text_bigrams(text)` and a GIN index on `message_revisions.content_text`. A two-character Chinese query such as `运维` uses that index. A trigram index does not: on the `postgres:16` locale (`en_US.utf8`), `ILIKE '%运维%'` is planned as a sequential scan. The search predicate is the bigram index plus a `strpos` check, for two characters and for longer queries. One character is rejected. This is keyword substring match, not similarity ranking and not a change to `evidence-query-v1`.
+
+```bash
+curl -sS -X POST http://127.0.0.1:8000/api/v1/evidence/search \
+  -H "Authorization: Bearer $EVIDENCE_READ_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"q":"运维","limit":20}'
+```
+
+`q` is required. Leading and trailing whitespace is removed. After that, `q` must be 2–200 characters. Optional fields are `source_platform`, `source_account_id`, `conversation_id`, `from`, `to`, `limit` (1–50, default 20), and `cursor`. `from` and `to` are inclusive timestamps with a timezone. Send the same `q` and filters with `cursor` that you used to obtain it. A missing or wrong token is 401 `authentication_required`. A one-character query is 400 `query_too_short`. A bad cursor is 400 `evidence_cursor_invalid`. Those error bodies do not contain `q`. The response sets `Cache-Control: private, no-store`.
+
+Hits are mapping-node observations of committed revisions, newest `normalized_timestamp` first, with null timestamps last, then by mapping-node observation id. A revision that was never observed is not a hit. `score` is how many non-overlapping times `q` occurs. `match_mode` is `bigram`. `snippet` is at most 200 characters around the first hit. Re-read the full message with the returned `conversation_observation_id` and `mapping_node_observation_id` on the GET evidence routes.
+
+```json
+{
+  "contract_version": "evidence-search-v1",
+  "meaning": "gateway_recorded_historical_evidence",
+  "consistency": "keyword_substring_match_v1",
+  "items": [
+    {
+      "conversation_observation_id": "8f0a1b2c-3d4e-4f50-a6b7-8c9d0e1f2a3b",
+      "mapping_node_observation_id": "9c8b7a6d-5e4f-4321-80ab-cdef01234567",
+      "message_revision_id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      "message_observation_id": "11111111-2222-4333-8444-555555555555",
+      "conversation_id": "1a2b3c4d-5e6f-4780-91a2-b3c4d5e6f708",
+      "source_account_id": "0f1e2d3c-4b5a-4697-8879-6a5b4c3d2e1f",
+      "source_platform": "chatgpt",
+      "role": "user",
+      "normalized_timestamp": "2026-09-14T10:22:31Z",
+      "snippet": "数据库运维和备份",
+      "score": 1,
+      "match_mode": "bigram"
+    }
+  ],
+  "next_cursor": null,
+  "limit": 20
+}
+```
