@@ -35,6 +35,8 @@ services:
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in gateway/.env}
       EVIDENCE_READ_API_TOKEN: ${EVIDENCE_READ_API_TOKEN:?set EVIDENCE_READ_API_TOKEN in gateway/.env}
       EVIDENCE_CURSOR_SIGNING_KEY: ${EVIDENCE_CURSOR_SIGNING_KEY:?set EVIDENCE_CURSOR_SIGNING_KEY in gateway/.env}
+      # Optional. client_id:sha256(token), comma-separated. Empty disables ingest.
+      INGEST_CLIENTS: ${INGEST_CLIENTS:-}
       DATABASE_URL: postgresql+psycopg://qingyu:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/qingyu
       ARCHIVE_ROOT: /data
     ports:

@@ -16,6 +16,8 @@ attempt to repair older destructive downgrade semantics.
 
 Migration `0017_evidence_search_bigram` adds `public.qingyu_text_bigrams(text)` and a GIN index on `message_revisions.content_text`. Upgrade builds the index with `CREATE INDEX CONCURRENTLY`. Downgrade drops the index and the function in the migration transaction and does not delete message text. It is only for disposable databases.
 
+Migration `0018_ingest_requests` adds the `ingest_requests` idempotency ledger. Downgrade drops that table. It does not delete archive objects, import jobs, or committed evidence. It is only for disposable databases.
+
 Migration `0015_attachment_observations` moves runtime attachment evidence into
 an immutable, attempt-scoped table. Its downgrade deterministically restores the
 legacy attachment columns from the latest observation for each attachment, but

@@ -70,6 +70,8 @@ For any `APP_ENV` other than `test`, startup requires three different values tha
 
 Bearer checks use `secrets.compare_digest` against every active token. `API_TOKENS` and `EVIDENCE_READ_API_TOKENS` are optional comma-separated extra tokens accepted alongside the primaries, so a token can be rotated by overlap; see “Rotating access tokens” in `gateway/README.md`. Do not run a real process with `APP_ENV=test`; that setting skips these checks. Generate values with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 
+`INGEST_CLIENTS` is optional and separate. Each entry is `client_id:sha256(token)`. Only the hash is configured. The raw token is the bearer for `/api/v1/ingest/*` and is rejected by import and evidence routes. The operator token and the evidence-read token are rejected by ingest. Several hashes for one `client_id` rotate that client without removing another client. Callers choose a stable `client_request_id` and send that same id on every retry. The gateway does not turn the payload hash into a request id.
+
 The Gateway test suite will not run against a database whose name is not `qingyu_test`. Do not point `TEST_DATABASE_URL` at the long-term `qingyu` database.
 
 ## Reverse proxy and TLS

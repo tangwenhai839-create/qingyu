@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 REPOSITORY = Path(__file__).parents[1]
-HEAD = "0017_evidence_search_bigram"
+HEAD = "0018_ingest_requests"
 
 
 def _run_alembic(database_url: str, *arguments: str, check: bool = True):

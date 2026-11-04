@@ -297,8 +297,9 @@ class GenericTreeParser:
 class ParserRegistry:
     def __init__(self, parsers=None):
         if parsers is None:
+            from .native import QingyuNativeParser
             from .real_chatgpt import ChatGPTExportParser
-            parsers = [GenericTreeParser(), ChatGPTExportParser()]
+            parsers = [QingyuNativeParser(), GenericTreeParser(), ChatGPTExportParser()]
         self.parsers = list(parsers)
     def resolve(self, name: str, version: str):
         """Resolve one exact installed parser contract without fallback."""

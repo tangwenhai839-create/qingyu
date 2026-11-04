@@ -89,6 +89,10 @@ os.environ["TRUSTED_PROXIES"] = ""
 os.environ["LOG_FORMAT"] = "text"
 os.environ["METRICS_ENABLED"] = "false"
 os.environ["METRICS_TOKEN"] = ""
+# Ingest is off unless a test installs hashes on the settings object.
+# Wait is zero so a test does not sleep for a worker that is not running.
+os.environ["INGEST_CLIENTS"] = ""
+os.environ["INGEST_SYNC_WAIT_SECONDS"] = "0"
 
 
 @pytest.fixture(scope="session", autouse=True)

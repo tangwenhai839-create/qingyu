@@ -1001,7 +1001,7 @@ def test_bigram_migration_downgrades_and_upgrades(verified_test_database):
         _alembic("upgrade", "head")
     with verified_test_database.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0017_evidence_search_bigram"
+            "0018_ingest_requests"
         )
         assert list(connection.scalar(text("SELECT public.qingyu_text_bigrams('运维')"))) == [
             "运维"

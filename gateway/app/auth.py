@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 from typing import Annotated
 
@@ -48,3 +49,53 @@ def require_evidence_read_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "authentication_required"},
         )
+
+
+def require_ingest_client(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> str:
+    """Return the client_id for an ingest bearer token.
+
+    The operator token and the evidence-read token are not ingest credentials.
+    Comparison is against SHA-256 hashes from INGEST_CLIENTS, not stored secrets.
+    """
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "authentication_required"},
+        )
+    supplied = credentials.credentials
+    if token_matches(supplied, settings.active_api_tokens()) or token_matches(
+        supplied, settings.active_evidence_read_tokens()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "authentication_required"},
+        )
+    client_id = match_ingest_client(supplied, settings.ingest_client_directory())
+    if client_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "authentication_required"},
+        )
+    return client_id
+
+
+def match_ingest_client(supplied: str, directory: dict[str, tuple[str, ...]]) -> str | None:
+    """Return the one client whose stored hash matches ``supplied``.
+
+    Every configured hash is compared. A hash that maps to two clients matches
+    nothing.
+    """
+    digest = hashlib.sha256(supplied.encode("utf-8")).hexdigest()
+    matched: list[str] = []
+    for client_id, hashes in directory.items():
+        hit = False
+        for candidate in hashes:
+            hit = secrets.compare_digest(digest, candidate) or hit
+        if hit:
+            matched.append(client_id)
+    if len(matched) != 1:
+        return None
+    return matched[0]

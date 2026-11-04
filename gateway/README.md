@@ -58,6 +58,10 @@ docker compose up -d db
 
 > **Note**: For any `APP_ENV` other than `test`, Gateway requires three distinct, non-example secrets (`API_TOKEN`, `EVIDENCE_READ_API_TOKEN`, and `EVIDENCE_CURSOR_SIGNING_KEY`) and `DATABASE_URL`; see `gateway/app/config.py` and `gateway/.env.example`. Startup logs one redacted line (environment, listen address, archive root, database host, and whether each secret is set). It does not log secret values.
 
+## Native ingest
+
+`POST /api/v1/ingest/messages`, `POST /api/v1/ingest/messages:batch`, and `POST /api/v1/ingest/conversations` append evidence through Archive → ImportJob (`qingyu_native`) → ImportBatchCommit. `INGEST_CLIENTS` maps `client_id` to SHA-256 token hashes. The ledger `ingest_requests` is unique on `(client_id, client_request_id)` and is not a queue. Reuse `client_request_id` on retry. `payload_hash` only detects a conflicting body. See [../docs/QUICKSTART.md](../docs/QUICKSTART.md).
+
 ## Search
 
 `POST /api/v1/evidence/search` (evidence-read token or API token) is a read-only substring search. Two-character Chinese queries use the bigram GIN index on `message_revisions.content_text`, not `pg_trgm`. The response contract is `evidence-search-v1`. The three GET evidence routes stay `evidence-query-v1`. See [../docs/QUICKSTART.md](../docs/QUICKSTART.md) and [docs/GATEWAY_FROZEN_MAINTENANCE_AMENDMENT_2.md](docs/GATEWAY_FROZEN_MAINTENANCE_AMENDMENT_2.md).
