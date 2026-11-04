@@ -86,10 +86,9 @@ def test_normalize_search_query_and_snippet_bounds():
 
 def test_evidence_query_v1_schema_is_not_extended():
     repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    schema = open(
-        os.path.join(repo, "contracts", "schemas", "evidence-query-v1.json"),
-        encoding="utf-8",
-    ).read()
+    schema_path = os.path.join(repo, "contracts", "schemas", "evidence-query-v1.json")
+    with open(schema_path, encoding="utf-8") as handle:
+        schema = handle.read()
     assert "evidence-query-v1" in schema
     assert "evidence-search-v1" not in schema
     assert "/search" not in schema
