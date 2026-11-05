@@ -48,13 +48,15 @@ Two directories have to survive a restart.
 
 The PostgreSQL volume is `qingyu_postgres`. Losing it loses the database unless you have a dump.
 
-On a host-run process, `ARCHIVE_ROOT` is a directory on the host. `.env.example` contains the placeholder `<repo>/data`; replace it with a real writable directory. The Compose `app` service does not use that value. It sets `ARCHIVE_ROOT` to `/data` on the named volume `archive_data`. The Gateway uses three trees under that directory:
+On a host-run process, `ARCHIVE_ROOT` is a directory on the host. `.env.example` contains the placeholder `<repo>/data`; replace it with a real writable directory that is not a mount point. The Compose `app` and `worker` services do not use that value. They set `ARCHIVE_ROOT` to `/data/archive` on the named volume `archive_data`, which is mounted at `/data`. `/data` is the mount point. `ensure_staging_layout` rejects a mount point (`os.path.ismount` → `archive_root_is_unsafe`), so a default `docker compose up` cannot store the archive at `/data`. The image creates `/data/archive` and gives it to the `qingyu` user before the process drops privileges. A new volume copies that directory. A volume created earlier is still writable at `/data` by that user, and the first import creates `/data/archive` if it is missing. No Compose override is required. The Gateway uses three trees under the archive root:
 
 - `archive/objects/` — content-addressed bytes
 - `manifests/` — manifest files for those objects
 - `staging/` — uploads and other temporary import files
 
 `staging/` is only for in-progress import work. The worker may delete files there. It is not a copy of the evidence. The cleanup code is not allowed to delete `archive/objects/`, `manifests/`, or committed database rows. That is an application rule, not a separate database role or filesystem ACL. The user that runs uvicorn and the worker can still delete those files. Limit that account to the people who operate the Gateway.
+
+Those three trees are relative to `ARCHIVE_ROOT`, for a host-run process and for Compose. On Compose they are `/data/archive/staging/`, `/data/archive/archive/objects/`, and `/data/archive/manifests/`. Object rows still store `archive/objects/<first two hex digits>/<sha256>`. Cleanup still may delete only under `staging/`.
 
 ## Secrets
 
@@ -118,7 +120,7 @@ Every HTTP response carries `X-Request-ID`. A single incoming value of 1–128 c
 
 Access logs are one line per request from the logger `qingyu.access`: method, path, status, duration, request id, and the direct peer address. The path has no query string. Headers, bearer tokens, and request or response bodies are not written. `/health` is included.
 
-`POST /api/v1/evidence/search` puts the query in the JSON body so it is not part of the URL. Do not log request bodies at the reverse proxy. If PostgreSQL statement logging is enabled, set `log_parameter_max_length=0` so the query text is not written as a bound parameter. The search index is the bigram GIN index from migration `0017_evidence_search_bigram`. It does not require `pg_trgm`.
+`POST /api/v1/evidence/search` puts the search text in the JSON field `q` so it is not part of the URL. A field named `query` is 422 `query_invalid`. Do not log request bodies at the reverse proxy. If PostgreSQL statement logging is enabled, set `log_parameter_max_length=0` so the query text is not written as a bound parameter. The search index is the bigram GIN index from migration `0017_evidence_search_bigram`. It does not require `pg_trgm`.
 
 `GET /metrics` returns Prometheus text (`text/plain; version=0.0.4`). It is not in the OpenAPI schema and it responds 404 until `METRICS_ENABLED=true`. The series are `qingyu_http_requests_total` and `qingyu_http_request_duration_seconds` (a histogram), both labeled with the route template and the status code. Unmatched paths use the label `unmatched`, so a scan of random URLs does not create a series per path. The numbers belong to this process only; a second worker or a second uvicorn process has its own.
 

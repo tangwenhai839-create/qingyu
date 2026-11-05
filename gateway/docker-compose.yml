@@ -26,7 +26,9 @@ services:
       # Secrets come from gateway/.env. A blank value refuses to start.
       # DATABASE_URL here is the in-network URL. The host-run value in .env
       # stays on 127.0.0.1. POSTGRES_PASSWORD must be URL-safe.
-      # ARCHIVE_ROOT is the volume path, not the host placeholder in .env.
+      # ARCHIVE_ROOT is a subdirectory of the volume, not the host placeholder
+      # in .env and not the mount point. Staging rejects a mount point
+      # (os.path.ismount → archive_root_is_unsafe). App and worker must match.
       APP_ENV: ${APP_ENV:-production}
       # Match the uvicorn command below. Do not take HOST from .env: that file
       # is the host-run bind, and this process listens on all container interfaces.
@@ -38,10 +40,11 @@ services:
       # Optional. client_id:sha256(token), comma-separated. Empty disables ingest.
       INGEST_CLIENTS: ${INGEST_CLIENTS:-}
       DATABASE_URL: postgresql+psycopg://qingyu:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/qingyu
-      ARCHIVE_ROOT: /data
+      ARCHIVE_ROOT: /data/archive
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
+      # Mount the volume at /data. ARCHIVE_ROOT is /data/archive inside it.
       - archive_data:/data
     command: ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     healthcheck:
@@ -69,10 +72,12 @@ services:
       EVIDENCE_READ_API_TOKEN: ${EVIDENCE_READ_API_TOKEN:?set EVIDENCE_READ_API_TOKEN in gateway/.env}
       EVIDENCE_CURSOR_SIGNING_KEY: ${EVIDENCE_CURSOR_SIGNING_KEY:?set EVIDENCE_CURSOR_SIGNING_KEY in gateway/.env}
       DATABASE_URL: postgresql+psycopg://qingyu:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/qingyu
-      ARCHIVE_ROOT: /data
+      # Same archive root as app: a subdirectory of the shared mount, not /data.
+      ARCHIVE_ROOT: /data/archive
       # One missing-manifest pass at startup. Set to 0 to skip it.
       IMPORT_WORKER_REPAIR_MANIFESTS: ${IMPORT_WORKER_REPAIR_MANIFESTS:-1}
     volumes:
+      # Same mount as app. ARCHIVE_ROOT stays /data/archive.
       - archive_data:/data
     command: ["python", "-m", "app.importers.worker_runtime"]
 

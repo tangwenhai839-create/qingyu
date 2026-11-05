@@ -901,6 +901,10 @@ def test_search_rejects_bad_queries_without_echoing_them(verified_test_database)
     assert invalid.json() == {"detail": {"code": "query_invalid"}}
     assert "运维" not in invalid.text
     assert "semantic" not in invalid.text
+    wrong_field = _post(client, {"query": "运维"})
+    assert wrong_field.status_code == 422
+    assert wrong_field.json() == {"detail": {"code": "query_invalid"}}
+    assert "运维" not in wrong_field.text
     naive = _post(client, {"q": "运维", "from": "2026-05-01T00:00:00"})
     assert naive.status_code == 422
     assert naive.json()["detail"]["code"] == "query_invalid"

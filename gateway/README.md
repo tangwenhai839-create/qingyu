@@ -12,8 +12,10 @@ cp .env.example .env
 # and three different secrets: API_TOKEN, EVIDENCE_READ_API_TOKEN,
 # EVIDENCE_CURSOR_SIGNING_KEY.
 # Leave DATABASE_URL on 127.0.0.1. That value is for uvicorn on the host.
-# The app service builds its own URL with host `db` and does not read ARCHIVE_ROOT
-# from .env; archives go to the archive_data volume at /data.
+# The app and worker services build their own URL with host `db` and do not
+# read ARCHIVE_ROOT from .env. Both set ARCHIVE_ROOT=/data/archive on the
+# archive_data volume (mounted at /data, which is a mount point and is not
+# a valid archive root).
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 docker compose up -d --build
 curl -fsS http://127.0.0.1:8000/health
@@ -22,7 +24,7 @@ curl -fsS http://127.0.0.1:8000/health/ready
 
 Compose waits until PostgreSQL is healthy, runs `alembic upgrade head`, then starts uvicorn and the import worker. The Gateway is published on `127.0.0.1:8000`. A blank `API_TOKEN`, `EVIDENCE_READ_API_TOKEN`, `EVIDENCE_CURSOR_SIGNING_KEY`, or `POSTGRES_PASSWORD` makes Compose refuse to start. `/health` does not check the database. `/health/ready` returns 200 after `SELECT 1` and 503 when the database does not answer.
 
-Imports do not finish inside the API process. The `worker` service is the same image, command `python -m app.importers.worker_runtime`, and it mounts the same `archive_data` volume at `/data`. `docker compose up -d --build` starts that process with the API, so an import completes without a second terminal. The worker claims a job only after `manifests/<sha256>.json` is a regular file. On startup it fills manifest files that are missing (`IMPORT_WORKER_REPAIR_MANIFESTS=0` skips that pass) and does not overwrite one that is already there.
+Imports do not finish inside the API process. The `worker` service is the same image, command `python -m app.importers.worker_runtime`, and it mounts the same `archive_data` volume at `/data`. App and worker both set `ARCHIVE_ROOT=/data/archive`, a directory on that volume. Staging rejects the mount point itself, so `/data` is not a valid archive root and a default `docker compose up` does not need an override to move it. The image creates `/data/archive` owned by `qingyu`. The trees under that root are still `staging/`, `archive/objects/`, and `manifests/`. `docker compose up -d --build` starts the worker with the API, so an import completes without a second terminal. The worker claims a job only after `manifests/<sha256>.json` is a regular file. On startup it fills manifest files that are missing (`IMPORT_WORKER_REPAIR_MANIFESTS=0` skips that pass) and does not overwrite one that is already there.
 
 `docker compose up -d db` still starts only PostgreSQL, which is what the host-run steps below use. A host-run uvicorn process does not start the worker; run `python -m app.importers.worker_runtime` in another terminal for that layout.
 
@@ -66,7 +68,7 @@ The stdio MCP adapter in [`../clients/mcp`](../clients/mcp) is another process. 
 
 ## Search
 
-`POST /api/v1/evidence/search` (evidence-read token or API token) is a read-only substring search. Two-character Chinese queries use the bigram GIN index on `message_revisions.content_text`, not `pg_trgm`. The response contract is `evidence-search-v1`. The three GET evidence routes stay `evidence-query-v1`. See [../docs/QUICKSTART.md](../docs/QUICKSTART.md) and [docs/GATEWAY_FROZEN_MAINTENANCE_AMENDMENT_2.md](docs/GATEWAY_FROZEN_MAINTENANCE_AMENDMENT_2.md).
+`POST /api/v1/evidence/search` (evidence-read token or API token) is a read-only substring search. The JSON field is `q`. A field named `query` is 422 `query_invalid`. Two-character Chinese queries use the bigram GIN index on `message_revisions.content_text`, not `pg_trgm`. The response contract is `evidence-search-v1`. The three GET evidence routes stay `evidence-query-v1`. See [../docs/QUICKSTART.md](../docs/QUICKSTART.md) and [docs/GATEWAY_FROZEN_MAINTENANCE_AMENDMENT_2.md](docs/GATEWAY_FROZEN_MAINTENANCE_AMENDMENT_2.md).
 
 ## Export
 
