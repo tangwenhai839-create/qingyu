@@ -14,11 +14,14 @@ COPY scripts ./scripts
 
 RUN pip install .
 
-# /data must exist and be owned by the runtime user before USER, so a fresh
-# named volume mounted there inherits that ownership instead of root.
+# /data is the archive_data mount point. Staging rejects that path
+# (os.path.ismount → archive_root_is_unsafe), so Compose sets ARCHIVE_ROOT
+# to /data/archive. Both directories must exist and be owned by the runtime
+# user before USER. A fresh named volume copies them and inherits that
+# ownership instead of root.
 RUN useradd --system --create-home --home-dir /home/qingyu --shell /usr/sbin/nologin qingyu \
-    && mkdir -p /data \
-    && chown qingyu:qingyu /data
+    && mkdir -p /data/archive \
+    && chown qingyu:qingyu /data /data/archive
 
 USER qingyu
 

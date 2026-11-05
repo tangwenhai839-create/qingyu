@@ -24,7 +24,7 @@ Edit `gateway/.env` before the processes start:
 - `API_TOKEN` — operator bearer token. Import and retry routes accept this token (or an entry in `API_TOKENS`).
 - `EVIDENCE_READ_API_TOKEN` — read bearer token for `/api/v1/evidence/...`, including `POST /api/v1/evidence/search`. The operator token is also accepted there. Import routes reject the read token.
 - `EVIDENCE_CURSOR_SIGNING_KEY` — HMAC key for evidence cursors. It is not a bearer token.
-- `ARCHIVE_ROOT` — a writable absolute directory. Replace the `<repo>/data` placeholder. The API and the worker must use the same directory.
+- `ARCHIVE_ROOT` — a writable absolute directory that is not a mount point. Replace the `<repo>/data` placeholder. The API and the worker must use the same directory. Staging rejects a mount point (`archive_root_is_unsafe`); use a subdirectory of that mount. Compose does not read this value.
 
 Outside `APP_ENV=test`, startup requires `DATABASE_URL`. `API_TOKEN`, `EVIDENCE_READ_API_TOKEN`, and `EVIDENCE_CURSOR_SIGNING_KEY` must differ from each other and from the example placeholders (`gateway/app/config.py`).
 
@@ -88,7 +88,7 @@ A missing or wrong operator token on that route is 401 with `{"detail": "Invalid
 
 ### Docker Compose instead of a host process
 
-From `gateway/`, with the same `.env` filled in, `docker compose up -d --build` waits for PostgreSQL, runs `alembic upgrade head` inside the app container, publishes the API on `127.0.0.1:8000`, and starts the `worker` service. The worker uses the same image as the API and the same `archive_data` volume (`ARCHIVE_ROOT=/data`). An import finishes without a second terminal. Leave `DATABASE_URL` on `127.0.0.1`; the app and worker services build their own URL. `POSTGRES_PASSWORD` must be URL-safe for those services (letters, digits, hyphen, underscore).
+From `gateway/`, with the same `.env` filled in, `docker compose up -d --build` waits for PostgreSQL, runs `alembic upgrade head` inside the app container, publishes the API on `127.0.0.1:8000`, and starts the `worker` service. The worker uses the same image as the API and the same `archive_data` volume. Both services set `ARCHIVE_ROOT=/data/archive`. The volume is mounted at `/data`. That path is a mount point, and staging rejects a mount point (`archive_root_is_unsafe`), so the archive root is the `archive` subdirectory. The image creates `/data/archive` and gives it to the `qingyu` user. A volume from an older image is still writable at `/data`, and the first import creates `/data/archive` when it is missing. You do not need a Compose override. The trees under that root are `staging/`, `archive/objects/`, and `manifests/` — the same relative layout as a host-run `ARCHIVE_ROOT`. An import finishes without a second terminal. Leave `DATABASE_URL` on `127.0.0.1`; the app and worker services build their own URL and do not read `ARCHIVE_ROOT` from `.env`. `POSTGRES_PASSWORD` must be URL-safe for those services (letters, digits, hyphen, underscore).
 
 `docker compose up -d db` still starts only PostgreSQL, for the host-run steps above. The curls in the next sections are the same.
 
@@ -276,7 +276,7 @@ Open `http://127.0.0.1:8000/docs` for the OpenAPI UI served by the same process.
 
 ## 5. Search message text
 
-`POST /api/v1/evidence/search` is a read-only substring search over committed message text. It accepts the same tokens as the GET evidence routes: `EVIDENCE_READ_API_TOKEN` or the operator token. It does not write a row. The query is a JSON field, not a URL parameter. Access logs record the path and not the body.
+`POST /api/v1/evidence/search` is a read-only substring search over committed message text. It accepts the same tokens as the GET evidence routes: `EVIDENCE_READ_API_TOKEN` or the operator token. It does not write a row. The search text is the JSON field `q`. It is not a URL parameter, and it is not a field named `query`. A body that sends `query`, omits `q`, or includes any unknown field is 422 `{"detail":{"code":"query_invalid"}}`. That error does not echo the body. Access logs record the path and not the body.
 
 `alembic upgrade head` creates `public.qingyu_text_bigrams(text)` and a GIN index on `message_revisions.content_text`. A two-character Chinese query such as `运维` uses that index. A trigram index does not: on the `postgres:16` locale (`en_US.utf8`), `ILIKE '%运维%'` is planned as a sequential scan. The search predicate is the bigram index plus a `strpos` check, for two characters and for longer queries. One character is rejected. This is keyword substring match, not similarity ranking and not a change to `evidence-query-v1`.
 
@@ -287,7 +287,7 @@ curl -sS -X POST http://127.0.0.1:8000/api/v1/evidence/search \
   -d '{"q":"运维","limit":20}'
 ```
 
-`q` is required. Leading and trailing whitespace is removed. After that, `q` must be 2–200 characters. Optional fields are `source_platform`, `source_account_id`, `conversation_id`, `from`, `to`, `limit` (1–50, default 20), and `cursor`. `from` and `to` are inclusive timestamps with a timezone. Send the same `q` and filters with `cursor` that you used to obtain it. A missing or wrong token is 401 `authentication_required`. A one-character query is 400 `query_too_short`. A bad cursor is 400 `evidence_cursor_invalid`. Those error bodies do not contain `q`. The response sets `Cache-Control: private, no-store`.
+`q` is required. The name is `q`; sending `query` instead is the 422 above. Leading and trailing whitespace is removed. After that, `q` must be 2–200 characters. Optional fields are `source_platform`, `source_account_id`, `conversation_id`, `from`, `to`, `limit` (1–50, default 20), and `cursor`. `from` and `to` are inclusive timestamps with a timezone. Send the same `q` and filters with `cursor` that you used to obtain it. A missing or wrong token is 401 `authentication_required`. A one-character query is 400 `query_too_short`. A bad cursor is 400 `evidence_cursor_invalid`. Those error bodies do not contain `q`. The response sets `Cache-Control: private, no-store`.
 
 Hits are mapping-node observations of committed revisions, newest `normalized_timestamp` first, with null timestamps last, then by mapping-node observation id. A revision that was never observed is not a hit. `score` is how many non-overlapping times `q` occurs. `match_mode` is `bigram`. `snippet` is at most 200 characters around the first hit. Re-read the full message with the returned `conversation_observation_id` and `mapping_node_observation_id` on the GET evidence routes.
 
